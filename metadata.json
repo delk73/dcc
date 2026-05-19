@@ -1,0 +1,8 @@
+{
+  "name": "Curve Composer",
+  "description": "Zero-AI color curve composer for UI and UE. Pure fast UI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
