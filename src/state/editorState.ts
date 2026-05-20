@@ -7,6 +7,7 @@ import {
   normalizeAnchors,
   sortAnchors
 } from '../lib/spaceUtils';
+import { normalizeLibraryCurves } from '../lib/curvePointPolicy';
 
 export type MainView = 'curve' | '2d' | '3d';
 
@@ -91,7 +92,7 @@ export const editorReducer = (state: EditorState, action: EditorAction): EditorS
         ...state,
         document: {
           ...state.document,
-          library: sortAnchors(action.library)
+          library: sortAnchors(normalizeLibraryCurves(action.library))
         }
       };
 
@@ -245,7 +246,7 @@ export const editorReducer = (state: EditorState, action: EditorAction): EditorS
     case 'reset-space':
       return {
         document: {
-          library: sortAnchors(action.library)
+          library: sortAnchors(normalizeLibraryCurves(action.library))
         },
         ui: {
           ...state.ui,

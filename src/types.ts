@@ -3,11 +3,71 @@ export type Keyframe = {
   value: number;
 };
 
+export type CurvePointRole =
+  | 'boundary'
+  | 'interior'
+  | 'anchor'
+  | 'feature'
+  | 'sample';
+
+export type CurvePointSource =
+  | 'authored'
+  | 'derived'
+  | 'procedural'
+  | 'imported';
+
+export type CurvePointEditability =
+  | 'free'
+  | 'locked'
+  | 'softLocked'
+  | 'convertible';
+
+export type CurvePointContinuity =
+  | 'smooth'
+  | 'corner';
+
+export type CurvePointOutInterpolation =
+  | 'smooth'
+  | 'linear'
+  | 'constant';
+
+export type CurvePointFlag =
+  | 'uncompressible'
+  | 'protected'
+  | 'spaceCoupled'
+  | 'diagnostic';
+
+export type CurvePointConstraints = {
+  edgeOwner?: 'start' | 'end';
+  pinnedTime?: boolean;
+  pinnedValue?: boolean;
+  minTime?: number;
+  maxTime?: number;
+  minValue?: number;
+  maxValue?: number;
+};
+
+export type CurvePoint = {
+  id: string;
+  time: number;
+  value: number;
+
+  role: CurvePointRole;
+  source: CurvePointSource;
+  edit: CurvePointEditability;
+
+  continuity: CurvePointContinuity;
+  outInterpolation: CurvePointOutInterpolation;
+
+  flags: CurvePointFlag[];
+  constraints?: CurvePointConstraints;
+};
+
 export type ColorCurve = {
-  r: Keyframe[];
-  g: Keyframe[];
-  b: Keyframe[];
-  a: Keyframe[];
+  r: CurvePoint[];
+  g: CurvePoint[];
+  b: CurvePoint[];
+  a: CurvePoint[];
 };
 
 export type Channel = 'r' | 'g' | 'b' | 'a';

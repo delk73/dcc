@@ -16,6 +16,7 @@ import {
   sortAnchors
 } from './lib/spaceUtils';
 import { insertTextChunk } from './lib/pngUtils';
+import { migrateKeyframesToCurvePoints, normalizeLibraryCurves } from './lib/curvePointPolicy';
 import {
   createInitialEditorState,
   editorReducer,
@@ -26,10 +27,10 @@ import {
 const EXPORT_ATLAS_SIZE = { width: 256, height: 32 };
 
 const initialCurve: ColorCurve = {
-  r: [{ time: 0, value: 0 }, { time: 1, value: 1 }],
-  g: [{ time: 0, value: 0 }, { time: 1, value: 1 }],
-  b: [{ time: 0, value: 0 }, { time: 1, value: 1 }],
-  a: [{ time: 0, value: 1 }, { time: 1, value: 1 }]
+  r: migrateKeyframesToCurvePoints([{ time: 0, value: 0 }, { time: 1, value: 1 }]),
+  g: migrateKeyframesToCurvePoints([{ time: 0, value: 0 }, { time: 1, value: 1 }]),
+  b: migrateKeyframesToCurvePoints([{ time: 0, value: 0 }, { time: 1, value: 1 }]),
+  a: migrateKeyframesToCurvePoints([{ time: 0, value: 1 }, { time: 1, value: 1 }])
 };
 
 const createMinimalBasicSpace = (): LibraryCurve[] => [{
@@ -88,7 +89,7 @@ export default function App() {
         }
 
         if (savedLibrary && savedLibrary.length > 0) {
-          dispatch({ type: 'load-library', library: savedLibrary });
+          dispatch({ type: 'load-library', library: normalizeLibraryCurves(savedLibrary) });
           
           // Load UX state
           dispatch({ type: 'hydrate-ui', uxState: normalizePersistedUxState(await get('curve-ux-state')) });

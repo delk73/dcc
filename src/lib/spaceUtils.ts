@@ -6,10 +6,10 @@ export const SNAP_EPSILON = 0.01;
 export const clampSpacePosition = (position: number) => Math.max(0, Math.min(1, position));
 
 export const cloneCurve = (curve: ColorCurve): ColorCurve => ({
-  r: curve.r.map((point) => ({ ...point })),
-  g: curve.g.map((point) => ({ ...point })),
-  b: curve.b.map((point) => ({ ...point })),
-  a: curve.a.map((point) => ({ ...point }))
+  r: curve.r.map((point) => ({ ...point, flags: [...point.flags], constraints: point.constraints ? { ...point.constraints } : undefined })),
+  g: curve.g.map((point) => ({ ...point, flags: [...point.flags], constraints: point.constraints ? { ...point.constraints } : undefined })),
+  b: curve.b.map((point) => ({ ...point, flags: [...point.flags], constraints: point.constraints ? { ...point.constraints } : undefined })),
+  a: curve.a.map((point) => ({ ...point, flags: [...point.flags], constraints: point.constraints ? { ...point.constraints } : undefined }))
 });
 
 export const sortAnchors = (anchors: SpaceAnchor[]) =>

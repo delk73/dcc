@@ -1,8 +1,9 @@
-import { ColorCurve, Keyframe } from '../types';
+import { ColorCurve, CurvePoint } from '../types';
+import { createStablePointId, getOutgoingInterpolation } from './curvePointPolicy';
 
 export type InterpMode = 'linear' | 'cubic' | 'constant';
 
-export function computeTangents(data: Keyframe[]): number[] {
+export function computeTangents(data: CurvePoint[]): number[] {
   const n = data.length;
   const tangents = new Array(n).fill(0);
   if (n < 2) return tangents;
@@ -19,7 +20,7 @@ export function computeTangents(data: Keyframe[]): number[] {
   return tangents;
 }
 
-export function evaluateCurve(keyframes: Keyframe[], tangents: number[], t: number, interpMode: InterpMode): number {
+export function evaluateCurve(keyframes: CurvePoint[], tangents: number[], t: number, interpMode: InterpMode): number {
   const n = keyframes.length;
   if (n === 0) return 0;
   if (n === 1) return keyframes[0].value;
@@ -36,9 +37,12 @@ export function evaluateCurve(keyframes: Keyframe[], tangents: number[], t: numb
       
       const tNorm = (t - k1.time) / dx;
       
-      if (interpMode === 'constant') {
+      const pointInterpolation = getOutgoingInterpolation(k1);
+      const segmentInterpolation = pointInterpolation === 'smooth' ? 'cubic' : pointInterpolation;
+
+      if (segmentInterpolation === 'constant') {
         return k1.value;
-      } else if (interpMode === 'linear') {
+      } else if (segmentInterpolation === 'linear') {
         return k1.value + (k2.value - k1.value) * tNorm;
       } else {
         const t2 = tNorm * tNorm;
@@ -60,20 +64,44 @@ export function evaluateCurve(keyframes: Keyframe[], tangents: number[], t: numb
 }
 
 export function blendCurves(c1: ColorCurve, c2: ColorCurve, blendT: number, interpMode: InterpMode): ColorCurve {
-  const getTimes = (arr: Keyframe[]) => arr.map(k => k.time);
+  const getTimes = (arr: CurvePoint[]) => arr.map(k => k.time);
   
-  const blendChannel = (ch1: Keyframe[], ch2: Keyframe[]) => {
+  const blendChannel = (ch1: CurvePoint[], ch2: CurvePoint[]) => {
     const times = Array.from(new Set([...getTimes(ch1), ...getTimes(ch2)])).sort((a,b) => a - b);
     const t1 = computeTangents(ch1);
     const t2 = computeTangents(ch2);
     
-    return times.map(time => {
+    return times.map((time, index) => {
       const val1 = evaluateCurve(ch1, t1, time, interpMode);
       const val2 = evaluateCurve(ch2, t2, time, interpMode);
-      return {
+      const sourcePoint = ch1.find(point => point.time === time) ?? ch2.find(point => point.time === time);
+      const isFirst = index === 0;
+      const isLast = index === times.length - 1;
+      const value = val1 + (val2 - val1) * blendT;
+      const role: CurvePoint['role'] = isFirst || isLast
+        ? 'boundary'
+        : sourcePoint?.role === 'anchor' || sourcePoint?.role === 'feature'
+          ? sourcePoint.role
+          : 'interior';
+      const flags: CurvePoint['flags'] = sourcePoint?.flags.filter(flag => flag === 'uncompressible' || flag === 'protected') ?? [];
+
+      const point: CurvePoint = {
+        id: createStablePointId({ time, value }, index),
         time,
-        value: val1 + (val2 - val1) * blendT
+        value,
+        role,
+        source: 'derived',
+        edit: 'convertible',
+        continuity: sourcePoint?.continuity ?? 'smooth',
+        outInterpolation: sourcePoint?.outInterpolation ?? 'smooth',
+        flags,
+        constraints: isFirst
+          ? { edgeOwner: 'start' }
+          : isLast
+            ? { edgeOwner: 'end' }
+            : undefined
       };
+      return point;
     });
   };
   

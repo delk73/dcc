@@ -1,7 +1,16 @@
 import React, { useRef, useState } from 'react';
-import { ColorCurve, Channel, ChannelMask, Keyframe } from '../types';
+import { ColorCurve, Channel, ChannelMask, CurvePoint } from '../types';
 import { cn } from '../lib/utils';
 import { computeTangents, evaluateCurve, InterpMode } from '../lib/curveUtils';
+import {
+  applyPointMoveConstraints,
+  canDeletePoint,
+  canDragPoint,
+  createAuthoredInteriorPoint,
+  getEdgeOwner,
+  getOutgoingInterpolation,
+  orderCurvePoints
+} from '../lib/curvePointPolicy';
 
 interface CurveEditorProps {
   curve: ColorCurve;
@@ -35,14 +44,7 @@ const CHANNEL_COLORS = {
 
 const POINT_EPSILON = 0.00001;
 const CHANNELS: Channel[] = ['r', 'g', 'b', 'a'];
-const isBoundaryIndex = (data: Keyframe[], index: number) => index === 0 || index === data.length - 1;
-const orderChannelData = (data: Keyframe[]) => {
-  if (data.length <= 2) return data;
-  const start = data[0];
-  const end = data[data.length - 1];
-  const interior = data.slice(1, -1).sort((a, b) => a.time - b.time);
-  return [start, ...interior, end];
-};
+const isEdgeOwner = (point: CurvePoint) => getEdgeOwner(point) === 'start' || getEdgeOwner(point) === 'end';
 
 export const CurveEditor: React.FC<CurveEditorProps> = ({
   curve,
@@ -63,6 +65,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   const handlePointerDown = (e: React.PointerEvent<SVGElement>, channel: Channel, pointIndex: number) => {
     if (e.button !== 0) return;
     if (!editChannels[channel]) return;
+    if (!canDragPoint(curve[channel][pointIndex])) return;
     e.stopPropagation();
     onActiveChannelChange(channel);
     setLocalCurve(curve);
@@ -103,20 +106,20 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     const point = getSvgPoint(e.clientX, e.clientY);
     if (!point) return;
 
-    let newTime = X_TO_TIME(point.x);
+    const newTime = X_TO_TIME(point.x);
     const newValue = Y_TO_VALUE(point.y);
 
     const channelData = [...localCurve[draggingPoint.channel]];
     const index = draggingPoint.index;
-    
-    const minTime = index > 0 ? channelData[index - 1].time + POINT_EPSILON : 0;
-    const maxTime = index < channelData.length - 1 ? channelData[index + 1].time - POINT_EPSILON : 1;
-    
-    newTime = Math.max(minTime, Math.min(newTime, maxTime));
+    const currentPoint = channelData[index];
+    if (!canDragPoint(currentPoint)) return;
+
+    const constrainedMove = applyPointMoveConstraints(channelData, index, { time: newTime, value: newValue }, POINT_EPSILON);
 
     channelData[index] = {
-      time: newTime,
-      value: newValue
+      ...currentPoint,
+      time: constrainedMove.time,
+      value: constrainedMove.value
     };
 
     const newCurve = {
@@ -141,7 +144,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
         target.releasePointerCapture(e.pointerId);
       }
       
-      const channelData = orderChannelData([...localCurve[draggingPoint.channel]]);
+      const channelData = orderCurvePoints([...localCurve[draggingPoint.channel]]);
       const newCurve = {
         ...localCurve,
         [draggingPoint.channel]: channelData
@@ -173,13 +176,13 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     }
 
     const channelData = currentChannelData.length >= 2
-      ? orderChannelData([
+      ? orderCurvePoints([
           currentChannelData[0],
           ...currentChannelData.slice(1, -1),
-          { time: newTime, value: newValue },
+          createAuthoredInteriorPoint(newTime, newValue),
           currentChannelData[currentChannelData.length - 1]
         ])
-      : orderChannelData([...currentChannelData, { time: newTime, value: newValue }]);
+      : orderCurvePoints([...currentChannelData, createAuthoredInteriorPoint(newTime, newValue)]);
     const newCurve = {
       ...activeCurveData,
       [targetChannel]: channelData
@@ -195,7 +198,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     
     const channelData = [...activeCurveData[channel]];
     if (!editChannels[channel]) return;
-    if (channelData.length <= 2 || isBoundaryIndex(channelData, index)) return;
+    if (channelData.length <= 2 || !canDeletePoint(channelData[index])) return;
     
     setDraggingPoint(null);
     channelData.splice(index, 1);
@@ -283,9 +286,10 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
         const k0 = sortedData[i];
         const k1 = sortedData[i+1];
         
-        if (interpMode === 'constant') {
+        const segmentInterpolation = getOutgoingInterpolation(k0);
+        if (segmentInterpolation === 'constant') {
           pathD += `L ${TIME_TO_X(k1.time)},${VALUE_TO_Y(k0.value)} L ${TIME_TO_X(k1.time)},${VALUE_TO_Y(k1.value)} `;
-        } else if (interpMode === 'linear') {
+        } else if (segmentInterpolation === 'linear') {
           pathD += `L ${TIME_TO_X(k1.time)},${VALUE_TO_Y(k1.value)} `;
         } else {
           const dx = k1.time - k0.time;
@@ -310,8 +314,8 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     const strokeOpacity = isEditable ? 1 : 0.3;
     const strokeWidth = isActive ? 3 : isEditable ? 2 : 1.25;
 
-    const startBoundary = data[0];
-    const endBoundary = data[data.length - 1];
+    const startBoundary = data.find(point => getEdgeOwner(point) === 'start') ?? data[0];
+    const endBoundary = data.find(point => getEdgeOwner(point) === 'end') ?? data[data.length - 1];
     const extensionOpacity = isActive ? 0.28 : Math.min(strokeOpacity, 0.18);
 
     return (
@@ -351,21 +355,22 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
         {showPoints && data.map((k, i) => {
             const x = TIME_TO_X(k.time);
             const y = VALUE_TO_Y(k.value);
-            const canRemove = data.length > 2 && !isBoundaryIndex(data, i);
+            const canRemove = data.length > 2 && canDeletePoint(k);
             const radius = isActive ? (isDraggingThis && draggingPoint?.index === i ? 8 : 6) : 4;
+            const canMove = canDragPoint(k);
 
             return (
                 <g
                     key={`${channel}-${i}`}
                     className={cn(
                       "outline-none",
-                      editChannels[channel] && (canRemove ? "cursor-pointer" : "cursor-grab")
+                      editChannels[channel] && (canMove ? (canRemove ? "cursor-pointer" : "cursor-grab") : "cursor-not-allowed")
                     )}
                     onPointerDown={(e) => handlePointerDown(e, channel, i)}
                     onContextMenu={(e) => handlePointContextMenu(e, channel, i)}
                     onDoubleClick={(e) => e.stopPropagation()}
                 >
-                    <title>{canRemove ? 'Right-click to remove point' : 'Dependent boundary point'}</title>
+                    <title>{canRemove ? 'Right-click to remove point' : isEdgeOwner(k) ? 'Boundary edge owner' : 'Protected point'}</title>
                     <circle
                         cx={x}
                         cy={y}
