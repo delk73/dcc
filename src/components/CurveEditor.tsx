@@ -283,8 +283,36 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
 
     if (!isVisible) return null;
 
+    const startBoundary = data[0];
+    const endBoundary = data[data.length - 1];
+    const extensionOpacity = isActive ? 0.28 : Math.min(strokeOpacity, 0.18);
+
     return (
       <g key={channel}>
+        {startBoundary.time > POINT_EPSILON && (
+          <line
+            x1={TIME_TO_X(0)}
+            y1={VALUE_TO_Y(startBoundary.value)}
+            x2={TIME_TO_X(startBoundary.time)}
+            y2={VALUE_TO_Y(startBoundary.value)}
+            stroke={CHANNEL_COLORS[channel]}
+            strokeWidth={1.5}
+            opacity={extensionOpacity}
+            style={{ pointerEvents: 'none' }}
+          />
+        )}
+        {endBoundary.time < 1 - POINT_EPSILON && (
+          <line
+            x1={TIME_TO_X(endBoundary.time)}
+            y1={VALUE_TO_Y(endBoundary.value)}
+            x2={TIME_TO_X(1)}
+            y2={VALUE_TO_Y(endBoundary.value)}
+            stroke={CHANNEL_COLORS[channel]}
+            strokeWidth={1.5}
+            opacity={extensionOpacity}
+            style={{ pointerEvents: 'none' }}
+          />
+        )}
         <path
             d={pathD}
             fill="none"
