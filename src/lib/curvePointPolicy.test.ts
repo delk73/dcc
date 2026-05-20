@@ -3,20 +3,25 @@ import {
   canDeletePoint,
   canDragPoint,
   canConvertToAuthored,
+  canEditPoint,
   canEditOutgoingInterpolation,
   canEditPointRole,
+  canToggleLock,
   convertPointToAuthored,
   createAuthoredInteriorPoint,
   getOutgoingInterpolation,
   migrateKeyframesToCurvePoints,
   normalizeCurvePoints,
+  orderCurvePoints,
   patchCurvePoint,
   patchEditableCurvePoint,
   setCurvePointRole,
+  togglePointFlag,
+  updatePointById,
   shouldPreserveDuringCompression,
   clampPointMove
 } from './curvePointPolicy';
-import { computeTangents, evaluateCurve } from './curveUtils';
+import { blendCurves, computeTangents, evaluateCurve } from './curveUtils';
 import { CurvePoint } from '../types';
 import { createInitialEditorState, serializeUxState } from '../state/editorState';
 
@@ -50,6 +55,8 @@ assert.deepEqual(
 const locked: CurvePoint = { ...migrated[1], edit: 'locked' };
 assert.equal(canDragPoint(locked), false);
 assert.equal(canDeletePoint(locked), false);
+assert.equal(canEditPoint(locked), false);
+assert.equal(canToggleLock(locked), true);
 
 assert.equal(canDeletePoint({ ...migrated[1], flags: ['protected'] }), false);
 assert.equal(canDeletePoint(migrated[0]), false);
@@ -62,6 +69,32 @@ const segmentPoints: CurvePoint[] = [
 ];
 assert.equal(getOutgoingInterpolation(segmentPoints[0]), 'constant');
 assert.equal(evaluateCurve(segmentPoints, computeTangents(segmentPoints), 0.5, 'linear'), 0);
+
+const nearlyRepeatedBlend = blendCurves(
+  {
+    r: [
+      { ...migrated[0], time: 0 },
+      { ...migrated[1], time: 0.5 },
+      { ...migrated[2], time: 1 }
+    ],
+    g: migrated,
+    b: migrated,
+    a: migrated
+  },
+  {
+    r: [
+      { ...migrated[0], time: 0 },
+      { ...migrated[1], id: 'near-repeat', time: 0.500000001 },
+      { ...migrated[2], time: 1 }
+    ],
+    g: migrated,
+    b: migrated,
+    a: migrated
+  },
+  0.5,
+  'cubic'
+);
+assert.equal(nearlyRepeatedBlend.r.length, 3);
 
 assert.deepEqual(
   clampPointMove({ ...migrated[1], constraints: { pinnedTime: true } }, { time: 0.75, value: 1.2 }),
@@ -95,6 +128,20 @@ const updatedCurve = patchCurvePoint(testCurve, selection, point => ({ ...point,
 assert.equal(updatedCurve.r[1].outInterpolation, 'linear');
 assert.equal(updatedCurve.r[0].outInterpolation, 'smooth');
 assert.equal(updatedCurve.g[1].outInterpolation, 'smooth');
+
+const targetedCurve = updatePointById(testCurve, 'r', migrated[1].id, { continuity: 'corner' });
+assert.equal(targetedCurve.r[1].continuity, 'corner');
+assert.equal(targetedCurve.r[0].continuity, 'smooth');
+assert.equal(targetedCurve.g[1].continuity, 'smooth');
+
+const oncePreserved = togglePointFlag(testCurve, 'r', migrated[1].id, 'uncompressible');
+const twicePreserved = togglePointFlag(oncePreserved, 'r', migrated[1].id, 'uncompressible');
+assert.deepEqual(oncePreserved.r[1].flags, ['uncompressible']);
+assert.deepEqual(twicePreserved.r[1].flags, []);
+
+const reordered = updatePointById(testCurve, 'r', migrated[1].id, { time: 0.9 });
+assert.equal(reordered.r.find(point => point.id === migrated[1].id)?.time, 0.9);
+assert.equal(orderCurvePoints(reordered.r).find(point => point.id === migrated[1].id)?.id, migrated[1].id);
 
 const roleAttempt = patchEditableCurvePoint(testCurve, { channel: 'r', pointId: migrated[0].id }, point => ({
   ...setCurvePointRole(point, 'anchor')

@@ -3,6 +3,25 @@ import { createStablePointId, getOutgoingInterpolation } from './curvePointPolic
 
 export type InterpMode = 'linear' | 'cubic' | 'constant';
 
+const TIME_MERGE_EPSILON = 0.00001;
+
+const mergeCurveTimes = (...curves: CurvePoint[][]): number[] => {
+  const sortedTimes = curves
+    .flatMap(curve => curve.map(point => point.time))
+    .sort((a, b) => a - b);
+
+  return sortedTimes.reduce<number[]>((times, time) => {
+    const previous = times[times.length - 1];
+    if (previous === undefined || Math.abs(previous - time) > TIME_MERGE_EPSILON) {
+      times.push(time);
+    }
+    return times;
+  }, []);
+};
+
+const findPointAtTime = (points: CurvePoint[], time: number) =>
+  points.find(point => Math.abs(point.time - time) <= TIME_MERGE_EPSILON);
+
 export function computeTangents(data: CurvePoint[]): number[] {
   const n = data.length;
   const tangents = new Array(n).fill(0);
@@ -64,17 +83,15 @@ export function evaluateCurve(keyframes: CurvePoint[], tangents: number[], t: nu
 }
 
 export function blendCurves(c1: ColorCurve, c2: ColorCurve, blendT: number, interpMode: InterpMode): ColorCurve {
-  const getTimes = (arr: CurvePoint[]) => arr.map(k => k.time);
-  
   const blendChannel = (ch1: CurvePoint[], ch2: CurvePoint[]) => {
-    const times = Array.from(new Set([...getTimes(ch1), ...getTimes(ch2)])).sort((a,b) => a - b);
+    const times = mergeCurveTimes(ch1, ch2);
     const t1 = computeTangents(ch1);
     const t2 = computeTangents(ch2);
     
     return times.map((time, index) => {
       const val1 = evaluateCurve(ch1, t1, time, interpMode);
       const val2 = evaluateCurve(ch2, t2, time, interpMode);
-      const sourcePoint = ch1.find(point => point.time === time) ?? ch2.find(point => point.time === time);
+      const sourcePoint = findPointAtTime(ch1, time) ?? findPointAtTime(ch2, time);
       const isFirst = index === 0;
       const isLast = index === times.length - 1;
       const value = val1 + (val2 - val1) * blendT;

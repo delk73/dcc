@@ -201,6 +201,12 @@ export default function App() {
     [activeSpaceCurve, selectedPoint]
   );
 
+  const selectedCurvePointNumber = useMemo(() => {
+    if (!selectedPoint) return undefined;
+    const pointIndex = activeSpaceCurve[selectedPoint.channel].findIndex(point => point.id === selectedPoint.pointId);
+    return pointIndex === -1 ? undefined : pointIndex + 1;
+  }, [activeSpaceCurve, selectedPoint]);
+
   const updateSelectedPoint = (patcher: (point: CurvePoint) => CurvePoint) => {
     if (!selectedPoint) return;
     updateActiveCurve(patchCurvePoint(activeSpaceCurve, selectedPoint, patcher));
@@ -405,7 +411,7 @@ export default function App() {
           </div>
         </header>
 
-        <div className="grid grid-cols-1 gap-8 items-start xl:grid-cols-[1fr_320px]">
+        <div className="grid grid-cols-1 gap-8 items-start">
             
           {/* Main Area (Editor + Generate) */}
           <div className={cn("space-y-8", "min-w-0")}>
@@ -425,14 +431,16 @@ export default function App() {
               </div>
 
               <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-6 pb-2 space-y-4">
-                 <div className="flex items-center justify-between">
+                 <div className="space-y-3">
                      <h3 className="text-[11px] uppercase tracking-widest font-bold text-zinc-300">Curve Editor</h3>
-                     <div className="flex items-center gap-3 text-xs">
-                          <span className="text-zinc-500">Segment Out is set per point</span>
-                          <button className="h-7 px-2 ml-4 flex items-center justify-center rounded border border-zinc-800 bg-black text-zinc-400 hover:text-white">
-                              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
-                          </button>
-                     </div>
+                     <PointInspector
+                        point={selectedCurvePoint}
+                        pointNumber={selectedCurvePointNumber}
+                        channelLabel={selectedPoint?.channel.toUpperCase()}
+                        onPatchPoint={updateSelectedPoint}
+                        onPatchEditablePoint={updateEditableSelectedPoint}
+                        onConvertToAuthored={convertSelectedPointToAuthored}
+                     />
                  </div>
 
                  <CurveEditor
@@ -591,19 +599,6 @@ export default function App() {
                    </button>
                 </div>
             )}
-
-          </div>
-          
-          {/* Right Rail Sidebar */}
-          <div className="flex flex-col gap-6 sticky top-8 transition-opacity duration-300">
-             <PointInspector
-                point={selectedCurvePoint}
-                channelLabel={selectedPoint?.channel.toUpperCase()}
-                onPatchPoint={updateSelectedPoint}
-                onPatchEditablePoint={updateEditableSelectedPoint}
-                onConvertToAuthored={convertSelectedPointToAuthored}
-                onClearSelection={() => dispatch({ type: 'clear-point-selection' })}
-             />
           </div>
         </div>
 
