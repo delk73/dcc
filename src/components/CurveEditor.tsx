@@ -3,11 +3,14 @@ import { ColorCurve, Channel, Keyframe } from '../types';
 import { cn } from '../lib/utils';
 import { computeTangents, InterpMode } from '../lib/curveUtils';
 
+export type ViewContextMode = 'show-all' | 'focus-filtered' | 'ghost-inactive' | 'hide-inactive';
+
 interface CurveEditorProps {
   curve: ColorCurve;
   onChange: (curve: ColorCurve) => void;
   activeChannel: Channel;
   interpMode: InterpMode;
+  viewContext: ViewContextMode;
 }
 
 const WIDTH = 1000;
@@ -33,7 +36,7 @@ const CHANNEL_COLORS = {
 
 const isBoundaryPoint = (point: Keyframe) => point.time <= 0.00001 || point.time >= 0.99999;
 
-export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activeChannel, interpMode }) => {
+export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activeChannel, interpMode, viewContext }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [draggingPoint, setDraggingPoint] = useState<{ channel: Channel, index: number } | null>(null);
   const [localCurve, setLocalCurve] = useState<ColorCurve>(curve);
@@ -244,6 +247,18 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
     
     const isActive = activeChannel === channel;
     const isDraggingThis = draggingPoint?.channel === channel;
+    const isVisible = isActive || viewContext !== 'hide-inactive';
+    const showPoints = isActive || viewContext === 'show-all';
+    const strokeOpacity = isActive
+      ? 1
+      : viewContext === 'show-all'
+        ? 0.7
+        : viewContext === 'focus-filtered'
+          ? 0.12
+          : 0.25;
+    const strokeWidth = isActive ? 3 : viewContext === 'show-all' ? 1.75 : 1.25;
+
+    if (!isVisible) return null;
 
     return (
       <g key={channel}>
@@ -251,11 +266,12 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
             d={pathD}
             fill="none"
             stroke={CHANNEL_COLORS[channel]}
-            strokeWidth={isActive ? 3 : 1.5}
-            opacity={isActive ? 1.0 : 0.4}
+            strokeWidth={strokeWidth}
+            opacity={strokeOpacity}
+            strokeDasharray={!isActive && viewContext === 'ghost-inactive' ? '6 8' : undefined}
             style={{ pointerEvents: 'none' }}
         />
-        {data.map((k, i) => {
+        {showPoints && data.map((k, i) => {
             const x = TIME_TO_X(k.time);
             const y = VALUE_TO_Y(k.value);
             const canRemove = data.length > 2 && !isBoundaryPoint(k);

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { get, set } from 'idb-keyval';
 import { ColorCurve, Channel, LibraryCurve } from './types';
-import { CurveEditor } from './components/CurveEditor';
+import { CurveEditor, ViewContextMode } from './components/CurveEditor';
 import { CurvePreview } from './components/CurvePreview';
-import { Plus, Layers, RotateCcw, Settings2 } from 'lucide-react';
+import { Crosshair, Eye, EyeOff, Layers, Layers2, Plus, RotateCcw, Settings2 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion } from 'motion/react';
 import { InterpMode, computeTangents, evaluateCurve, blendSpaceCurves } from './lib/curveUtils';
@@ -64,6 +64,7 @@ export default function App() {
 
   const [activeChannel, setActiveChannel] = useState<Channel>('r');
   const [interpMode, setInterpMode] = useState<InterpMode>('cubic');
+  const [viewContext, setViewContext] = useState<ViewContextMode>('show-all');
 
   // Load from local storage / indexedDB
   useEffect(() => {
@@ -94,6 +95,7 @@ export default function App() {
             if (uxState.interpMode) setInterpMode(uxState.interpMode);
             if (uxState.mainView) setMainView(uxState.mainView);
             if (uxState.activeChannel) setActiveChannel(uxState.activeChannel);
+            if (uxState.viewContext) setViewContext(uxState.viewContext);
           }
         } else {
           setLibrary(createMinimalBasicSpace());
@@ -117,10 +119,11 @@ export default function App() {
     const uxState = {
        interpMode,
        mainView,
-       activeChannel
+       activeChannel,
+       viewContext
     };
     set('curve-ux-state', uxState).catch(console.error);
-  }, [interpMode, mainView, activeChannel]);
+  }, [interpMode, mainView, activeChannel, viewContext]);
 
   const activeCategoryCurves = useMemo(() => {
     return [...library].sort((a,b) => (a.position||0) - (b.position||0));
@@ -339,6 +342,13 @@ export default function App() {
     { id: 'a', label: 'Alpha', color: 'bg-stone-400' },
   ];
 
+  const viewContextOptions = [
+    { id: 'show-all', label: 'Show All', icon: Eye },
+    { id: 'focus-filtered', label: 'Focus Filtered', icon: Crosshair },
+    { id: 'ghost-inactive', label: 'Ghost Inactive', icon: Layers2 },
+    { id: 'hide-inactive', label: 'Hide Inactive', icon: EyeOff },
+  ] satisfies { id: ViewContextMode; label: string; icon: React.ComponentType<{ className?: string }> }[];
+
   return (
     <div className="min-h-screen bg-black text-zinc-100 font-sans selection:bg-indigo-500/30">
       <div className="max-w-[1400px] mx-auto p-4 sm:p-8 space-y-8">
@@ -452,7 +462,7 @@ export default function App() {
                      </div>
                  </div>
 
-                 <CurveEditor curve={activeSpaceCurve} onChange={updateActiveCurve} activeChannel={activeChannel} interpMode={interpMode} />
+                 <CurveEditor curve={activeSpaceCurve} onChange={updateActiveCurve} activeChannel={activeChannel} interpMode={interpMode} viewContext={viewContext} />
               </div>
                 
                 {/* 3 Panels: View Context, Edit Filter, Diagnostics */}
@@ -460,12 +470,32 @@ export default function App() {
                     <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
                         <h3 className="text-[10px] uppercase tracking-wider font-bold text-zinc-400 border-b border-zinc-800 pb-2">View Context <span className="font-normal normal-case text-zinc-600">(Affects which curves you see)</span></h3>
                         <div className="flex bg-black border border-zinc-800 rounded-lg p-0.5">
-                            <button className="flex-1 py-1.5 text-[11px] font-medium bg-zinc-800 text-white rounded-md shadow-sm">Show All</button>
-                            <button className="flex-1 py-1.5 text-[11px] font-medium text-zinc-500 hover:text-white transition-colors">Focus Filtered</button>
-                            <button className="flex-1 py-1.5 text-[11px] font-medium text-zinc-500 hover:text-white transition-colors">Ghost Inactive</button>
-                            <button className="flex-1 py-1.5 text-[11px] font-medium text-zinc-500 hover:text-white transition-colors">Hide Inactive</button>
+                            {viewContextOptions.map(({ id, label, icon: Icon }) => (
+                              <button
+                                key={id}
+                                onClick={() => setViewContext(id)}
+                                title={label}
+                                aria-label={label}
+                                aria-pressed={viewContext === id}
+                                className={cn(
+                                  "flex-1 min-w-0 py-1.5 text-[11px] font-medium rounded-md transition-colors",
+                                  "flex items-center justify-center gap-1.5",
+                                  viewContext === id
+                                    ? "bg-zinc-800 text-white shadow-sm"
+                                    : "text-zinc-500 hover:text-white"
+                                )}
+                              >
+                                <Icon className="w-3.5 h-3.5 shrink-0" />
+                                <span className="truncate">{label}</span>
+                              </button>
+                            ))}
                         </div>
-                        <p className="text-[10px] text-zinc-500 pt-1">All channels visible. Inactive channels are ghosted.</p>
+                        <p className="text-[10px] text-zinc-500 pt-1">
+                            {viewContext === 'show-all' && 'All channels visible with editable points.'}
+                            {viewContext === 'focus-filtered' && 'Filtered channel emphasized; inactive channels stay as faint context.'}
+                            {viewContext === 'ghost-inactive' && 'Inactive channels are ghosted behind the filtered channel.'}
+                            {viewContext === 'hide-inactive' && 'Only the filtered channel is visible.'}
+                        </p>
                     </div>
 
                     <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
@@ -576,14 +606,6 @@ export default function App() {
                     <div className="flex items-center justify-between text-xs font-mono text-zinc-400 mt-2">
                         <div className="flex gap-4">
                             <span>X: {spaceLever.toFixed(2)}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                           <span>Zoom</span>
-                           <div className="flex items-center border border-zinc-800 rounded-md bg-black">
-                               <button className="px-2 py-1 hover:text-white transition-colors">-</button>
-                               <span className="px-2 text-zinc-300">100%</span>
-                               <button className="px-2 py-1 hover:text-white transition-colors">+</button>
-                           </div>
                         </div>
                     </div>
                 </div>
