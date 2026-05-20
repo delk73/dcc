@@ -34,7 +34,15 @@ const CHANNEL_COLORS = {
   a: '#a8a29e'
 };
 
-const isBoundaryPoint = (point: Keyframe) => point.time <= 0.00001 || point.time >= 0.99999;
+const POINT_EPSILON = 0.00001;
+const isBoundaryIndex = (data: Keyframe[], index: number) => index === 0 || index === data.length - 1;
+const orderChannelData = (data: Keyframe[]) => {
+  if (data.length <= 2) return data;
+  const start = data[0];
+  const end = data[data.length - 1];
+  const interior = data.slice(1, -1).sort((a, b) => a.time - b.time);
+  return [start, ...interior, end];
+};
 
 export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activeChannel, interpMode, viewContext }) => {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -67,8 +75,8 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
     const channelData = [...localCurve[draggingPoint.channel]];
     const index = draggingPoint.index;
     
-    const minTime = index > 0 ? channelData[index - 1].time + 0.00001 : 0;
-    const maxTime = index < channelData.length - 1 ? channelData[index + 1].time - 0.00001 : 1;
+    const minTime = index > 0 ? channelData[index - 1].time + POINT_EPSILON : 0;
+    const maxTime = index < channelData.length - 1 ? channelData[index + 1].time - POINT_EPSILON : 1;
     
     newTime = Math.max(minTime, Math.min(newTime, maxTime));
 
@@ -99,7 +107,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
         target.releasePointerCapture(e.pointerId);
       }
       
-      const channelData = [...localCurve[draggingPoint.channel]].sort((a, b) => a.time - b.time);
+      const channelData = orderChannelData([...localCurve[draggingPoint.channel]]);
       const newCurve = {
         ...localCurve,
         [draggingPoint.channel]: channelData
@@ -119,10 +127,25 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
     const x = (e.clientX - ctm.e) / ctm.a;
     const y = (e.clientY - ctm.f) / ctm.d;
 
-    const newTime = X_TO_TIME(x);
+    let newTime = X_TO_TIME(x);
     const newValue = Y_TO_VALUE(y);
+    const currentChannelData = activeCurveData[activeChannel];
 
-    const channelData = [...activeCurveData[activeChannel], { time: newTime, value: newValue }].sort((a, b) => a.time - b.time);
+    if (currentChannelData.length >= 2) {
+      const minTime = currentChannelData[0].time + POINT_EPSILON;
+      const maxTime = currentChannelData[currentChannelData.length - 1].time - POINT_EPSILON;
+      if (minTime > maxTime) return;
+      newTime = Math.max(minTime, Math.min(newTime, maxTime));
+    }
+
+    const channelData = currentChannelData.length >= 2
+      ? orderChannelData([
+          currentChannelData[0],
+          ...currentChannelData.slice(1, -1),
+          { time: newTime, value: newValue },
+          currentChannelData[currentChannelData.length - 1]
+        ])
+      : orderChannelData([...currentChannelData, { time: newTime, value: newValue }]);
     const newCurve = {
       ...activeCurveData,
       [activeChannel]: channelData
@@ -137,7 +160,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
     e.stopPropagation();
     
     const channelData = [...activeCurveData[channel]];
-    if (channelData.length <= 2 || isBoundaryPoint(channelData[index])) return;
+    if (channelData.length <= 2 || isBoundaryIndex(channelData, index)) return;
     
     setDraggingPoint(null);
     channelData.splice(index, 1);
@@ -274,7 +297,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
         {showPoints && data.map((k, i) => {
             const x = TIME_TO_X(k.time);
             const y = VALUE_TO_Y(k.value);
-            const canRemove = data.length > 2 && !isBoundaryPoint(k);
+            const canRemove = data.length > 2 && !isBoundaryIndex(data, i);
             const radius = isActive ? (draggingPoint?.index === i ? 8 : 6) : 4;
 
             return (
