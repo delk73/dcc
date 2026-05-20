@@ -39,7 +39,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
 
   const activeCurveData = draggingPoint ? localCurve : curve;
 
-  const handlePointerDown = (e: React.PointerEvent<SVGSVGElement>, channel: Channel, pointIndex: number) => {
+  const handlePointerDown = (e: React.PointerEvent<SVGElement>, channel: Channel, pointIndex: number) => {
     e.stopPropagation();
     setLocalCurve(curve);
     setDraggingPoint({ channel, index: pointIndex });

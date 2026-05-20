@@ -26,6 +26,47 @@ const initialCurve: ColorCurve = {
   a: [{ time: 0, value: 1 }, { time: 1, value: 1 }]
 };
 
+const POSITION_EPSILON = 0.001;
+const SNAP_EPSILON = 0.01;
+
+const clampSpacePosition = (position: number) => Math.max(0, Math.min(1, position));
+
+const cloneCurve = (curve: ColorCurve): ColorCurve => ({
+  r: curve.r.map((point) => ({ ...point })),
+  g: curve.g.map((point) => ({ ...point })),
+  b: curve.b.map((point) => ({ ...point })),
+  a: curve.a.map((point) => ({ ...point }))
+});
+
+const sortAnchors = (anchors: LibraryCurve[]) =>
+  [...anchors].sort((a, b) => (a.position || 0) - (b.position || 0));
+
+const normalizeAnchors = (anchors: LibraryCurve[]) => {
+  const sorted = sortAnchors(anchors);
+  return sorted.map((curve, index) => ({
+    ...curve,
+    position: curve.position ?? (sorted.length > 1 ? index / (sorted.length - 1) : 0),
+    authored: curve.authored ?? true
+  }));
+};
+
+const snapToAnchorIfClose = (position: number, anchors: LibraryCurve[]) => {
+  const clamped = clampSpacePosition(position);
+  const nearestAnchor = anchors.reduce<LibraryCurve | null>((nearest, anchor) => {
+    if (!nearest) return anchor;
+    return Math.abs(anchor.position - clamped) < Math.abs(nearest.position - clamped) ? anchor : nearest;
+  }, null);
+
+  return nearestAnchor && Math.abs(nearestAnchor.position - clamped) <= SNAP_EPSILON
+    ? nearestAnchor.position
+    : clamped;
+};
+
+const evaluateSpaceAt = (position: number, anchors: LibraryCurve[], interpMode: InterpMode): ColorCurve => {
+  if (anchors.length === 0) return cloneCurve(initialCurve);
+  return cloneCurve(blendSpaceCurves(anchors, clampSpacePosition(position), interpMode));
+};
+
 import { AtlasViewer } from './components/AtlasViewer';
 
 export default function App() {
@@ -51,10 +92,11 @@ export default function App() {
   const wrapSpace = activeControlState.wrap;
   const loopBlend = activeControlState.blend;
 
-  const setSpaceLever = (val: number) => {
-      if (mainView === 'curve') setCurveState(prev => ({...prev, lever: val}));
-      else if (mainView === '2d') setState2d(prev => ({...prev, lever: val}));
-      else setState3d(prev => ({...prev, lever: val}));
+  const setRawSpacePosition = (val: number) => {
+      const nextPosition = clampSpacePosition(val);
+      if (mainView === 'curve') setCurveState(prev => ({...prev, lever: nextPosition}));
+      else if (mainView === '2d') setState2d(prev => ({...prev, lever: nextPosition}));
+      else setState3d(prev => ({...prev, lever: nextPosition}));
   };
   const setWrapSpace = (val: boolean) => {
       if (mainView === 'curve') setCurveState(prev => ({...prev, wrap: val}));
@@ -139,11 +181,12 @@ export default function App() {
   
   // Ensure default position parameters exist (for backwards compat)
   const normalizedCategoryCurves = useMemo(() => {
-     return activeCategoryCurves.map((c, i) => ({
-         ...c,
-         position: c.position ?? (activeCategoryCurves.length > 1 ? i / (activeCategoryCurves.length - 1) : 0)
-     }));
+     return normalizeAnchors(activeCategoryCurves);
   }, [activeCategoryCurves]);
+
+  const setSpacePosition = (position: number) => {
+    setRawSpacePosition(snapToAnchorIfClose(position, normalizedCategoryCurves));
+  };
 
   const spaceCurves = useMemo(() => {
       return wrapSpace && normalizedCategoryCurves.length > 0 
@@ -164,23 +207,33 @@ export default function App() {
   const deferredActiveSpaceCurve = React.useDeferredValue(activeSpaceCurve);
 
   const updateActiveCurve = (newCurve: ColorCurve) => {
-    const exactMatch = spaceCurves.find(c => Math.abs(c.position - spaceLever) < 0.01);
-    
-    if (exactMatch) {
-       const targetId = exactMatch.id === 'wrap-dummy' ? normalizedCategoryCurves[0].id : exactMatch.id;
-       setLibrary(prev => prev.map(c => c.id === targetId ? { ...c, curve: newCurve } : c));
-    } else {
-       setLibrary(prev => {
-           const newEntry: LibraryCurve = {
-               id: crypto.randomUUID(),
-               name: `Anchor ${prev.length + 1}`,
-               category: 'default',
-               position: spaceLever,
-               curve: newCurve
-           };
-           return [...prev, newEntry];
-       });
-    }
+    const editPosition = clampSpacePosition(spaceLever);
+
+    setLibrary(prev => {
+      const anchors = normalizeAnchors(prev);
+      const existingAnchor = anchors.find(anchor => Math.abs(anchor.position - editPosition) <= POSITION_EPSILON);
+
+      if (existingAnchor) {
+        return sortAnchors(prev.map(anchor =>
+          anchor.id === existingAnchor.id
+            ? { ...anchor, position: existingAnchor.position, curve: cloneCurve(newCurve), authored: true }
+            : anchor
+        ));
+      }
+
+      const derivedCurve = evaluateSpaceAt(editPosition, anchors, interpMode);
+      const newEntry: LibraryCurve = {
+        id: crypto.randomUUID(),
+        name: `Anchor ${anchors.length + 1}`,
+        category: anchors[0]?.category ?? 'default',
+        position: editPosition,
+        curve: cloneCurve(newCurve ?? derivedCurve),
+        authored: true,
+        source: 'implicit-edit'
+      };
+
+      return sortAnchors([...prev, newEntry]);
+    });
   };
 
   const handleCloneActiveCurve = () => {
@@ -190,12 +243,14 @@ export default function App() {
           name: `Anchor ${prev.length + 1}`,
           category: 'default',
           position: Math.min(1, spaceLever + 0.05), // Jitter slightly so it sports right after the current space lever
-          curve: JSON.parse(JSON.stringify(activeSpaceCurve))
+          curve: cloneCurve(activeSpaceCurve),
+          authored: true,
+          source: 'manual'
         };
         const categoryCurves = [...prev, newEntry];
         categoryCurves.sort((a, b) => (a.position || 0) - (b.position || 0));
 
-        setSpaceLever(newEntry.position);
+        setRawSpacePosition(newEntry.position);
         return categoryCurves;
     });
   };
@@ -531,8 +586,7 @@ export default function App() {
                               list="variant-ticks"
                               min="0" max="1" step="0.001"
                               value={spaceLever}
-                              disabled={normalizedCategoryCurves.length <= 1}
-                              onChange={(e) => setSpaceLever(parseFloat(e.target.value))}
+                              onChange={(e) => setSpacePosition(parseFloat(e.target.value))}
                               className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-30"
                             />
                             
@@ -591,7 +645,7 @@ export default function App() {
                             curves={spaceCurves} 
                             interpMode={interpMode} 
                             spaceLever={spaceLever} 
-                            setSpaceLever={setSpaceLever} 
+                            setSpaceLever={setSpacePosition}
                             wrapSpace={wrapSpace}
                             setWrapSpace={setWrapSpace}
                             loopBlend={loopBlend}
@@ -778,4 +832,3 @@ export default function App() {
     </div>
   );
 }
-

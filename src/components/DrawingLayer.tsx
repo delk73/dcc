@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import { DrawingEngine, DrawingOptions } from '../lib/drawingEngine';
 
+type DrawingPoint = { x: number; y: number; pressure?: number };
+
 interface DrawingLayerProps {
   width: number;
   height: number;
@@ -29,11 +31,11 @@ export const DrawingLayer = forwardRef<DrawingLayerRef, DrawingLayerProps>(
     const [isDrawing, setIsDrawing] = useState(false);
     
     // For SDF circle
-    const startPosRef = useRef<{x: number, y: number} | null>(null);
-    const prevPosRef = useRef<{x: number, y: number} | null>(null);
+    const startPosRef = useRef<DrawingPoint | null>(null);
+    const prevPosRef = useRef<DrawingPoint | null>(null);
     
     // Animation frame for continuous airbrush
-    const requestRef = useRef<number>();
+    const requestRef = useRef<number | null>(null);
 
     useImperativeHandle(ref, () => ({
       undo: () => {
@@ -162,7 +164,7 @@ export const DrawingLayer = forwardRef<DrawingLayerRef, DrawingLayerProps>(
       onChange?.();
     };
 
-    const tickBrush = (currentPos: {x:number, y:number, pressure?:number}, prevPos: {x:number, y:number, pressure?:number}) => {
+    const tickBrush = (currentPos: DrawingPoint, prevPos: DrawingPoint) => {
         // Interpolate for fast mouse movement
         const dx = currentPos.x - prevPos.x;
         const dy = currentPos.y - prevPos.y;

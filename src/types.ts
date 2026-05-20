@@ -18,4 +18,6 @@ export type LibraryCurve = {
   category: string;
   position: number; // 0.0 to 1.0 mapping across the curve space
   curve: ColorCurve;
+  authored?: boolean;
+  source?: 'implicit-edit' | 'manual' | 'loaded';
 };
