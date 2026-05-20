@@ -19,6 +19,9 @@ import {
 import { insertTextChunk } from './lib/pngUtils';
 
 const EXPORT_ATLAS_SIZE = { width: 256, height: 32 };
+const UI_TIMING = {
+  tooltipDelayMs: 180
+};
 
 const initialCurve: ColorCurve = {
   r: [{ time: 0, value: 0 }, { time: 1, value: 1 }],
@@ -65,6 +68,8 @@ export default function App() {
   const [activeChannel, setActiveChannel] = useState<Channel>('r');
   const [interpMode, setInterpMode] = useState<InterpMode>('cubic');
   const [viewContext, setViewContext] = useState<ViewContextMode>('show-all');
+  const [viewContextTooltip, setViewContextTooltip] = useState<ViewContextMode | null>(null);
+  const viewContextTooltipTimerRef = useRef<number | null>(null);
 
   // Load from local storage / indexedDB
   useEffect(() => {
@@ -124,6 +129,34 @@ export default function App() {
     };
     set('curve-ux-state', uxState).catch(console.error);
   }, [interpMode, mainView, activeChannel, viewContext]);
+
+  useEffect(() => {
+    return () => {
+      if (viewContextTooltipTimerRef.current !== null) {
+        window.clearTimeout(viewContextTooltipTimerRef.current);
+      }
+    };
+  }, []);
+
+  const clearViewContextTooltipTimer = () => {
+    if (viewContextTooltipTimerRef.current !== null) {
+      window.clearTimeout(viewContextTooltipTimerRef.current);
+      viewContextTooltipTimerRef.current = null;
+    }
+  };
+
+  const showViewContextTooltip = (id: ViewContextMode) => {
+    clearViewContextTooltipTimer();
+    viewContextTooltipTimerRef.current = window.setTimeout(() => {
+      setViewContextTooltip(id);
+      viewContextTooltipTimerRef.current = null;
+    }, UI_TIMING.tooltipDelayMs);
+  };
+
+  const hideViewContextTooltip = () => {
+    clearViewContextTooltipTimer();
+    setViewContextTooltip(null);
+  };
 
   const activeCategoryCurves = useMemo(() => {
     return [...library].sort((a,b) => (a.position||0) - (b.position||0));
@@ -474,11 +507,14 @@ export default function App() {
                               <button
                                 key={id}
                                 onClick={() => setViewContext(id)}
-                                title={label}
                                 aria-label={label}
                                 aria-pressed={viewContext === id}
+                                onFocus={() => showViewContextTooltip(id)}
+                                onBlur={hideViewContextTooltip}
+                                onPointerEnter={() => showViewContextTooltip(id)}
+                                onPointerLeave={hideViewContextTooltip}
                                 className={cn(
-                                  "h-8 rounded-md transition-colors",
+                                  "relative h-8 rounded-md transition-colors",
                                   "flex items-center justify-center",
                                   viewContext === id
                                     ? "bg-zinc-800 text-white shadow-sm"
@@ -486,6 +522,14 @@ export default function App() {
                                 )}
                               >
                                 <Icon className="w-4 h-4" aria-hidden="true" />
+                                {viewContextTooltip === id && (
+                                  <span
+                                    role="tooltip"
+                                    className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 whitespace-nowrap rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-[10px] font-medium text-zinc-200 shadow-lg"
+                                  >
+                                    {label}
+                                  </span>
+                                )}
                               </button>
                             ))}
                         </div>
