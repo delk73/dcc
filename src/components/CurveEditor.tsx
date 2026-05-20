@@ -1,9 +1,7 @@
-import React, { useRef, useState, useMemo, useEffect } from 'react';
-import { ColorCurve, Channel, Keyframe } from '../types';
+import React, { useRef, useState } from 'react';
+import { ColorCurve, Channel, ChannelMask, Keyframe } from '../types';
 import { cn } from '../lib/utils';
 import { computeTangents, evaluateCurve, InterpMode } from '../lib/curveUtils';
-
-export type ChannelMask = Record<Channel, boolean>;
 
 interface CurveEditorProps {
   curve: ColorCurve;
@@ -354,7 +352,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
             const x = TIME_TO_X(k.time);
             const y = VALUE_TO_Y(k.value);
             const canRemove = data.length > 2 && !isBoundaryIndex(data, i);
-            const radius = isActive ? (draggingPoint?.index === i ? 8 : 6) : 4;
+            const radius = isActive ? (isDraggingThis && draggingPoint?.index === i ? 8 : 6) : 4;
 
             return (
                 <g

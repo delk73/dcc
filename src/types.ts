@@ -12,6 +12,8 @@ export type ColorCurve = {
 
 export type Channel = 'r' | 'g' | 'b' | 'a';
 
+export type ChannelMask = Record<Channel, boolean>;
+
 export type LibraryCurve = {
   id: string;
   name: string;

@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useReducer, useState, useEffect, useMemo, useRef } from 'react';
 import { get, set } from 'idb-keyval';
 import { ColorCurve, Channel, LibraryCurve } from './types';
-import { ChannelMask, CurveEditor } from './components/CurveEditor';
+import { CurveEditor } from './components/CurveEditor';
 import { CurvePreview } from './components/CurvePreview';
 import { Layers, Plus, RotateCcw, Settings2 } from 'lucide-react';
 import { cn } from './lib/utils';
@@ -11,22 +11,19 @@ import {
   POSITION_EPSILON,
   clampSpacePosition,
   cloneCurve,
-  evaluateSpaceAt,
   normalizeAnchors,
   snapToAnchorIfClose,
   sortAnchors
 } from './lib/spaceUtils';
 import { insertTextChunk } from './lib/pngUtils';
+import {
+  createInitialEditorState,
+  editorReducer,
+  normalizePersistedUxState,
+  serializeUxState,
+} from './state/editorState';
 
 const EXPORT_ATLAS_SIZE = { width: 256, height: 32 };
-
-const ALL_CHANNELS: Channel[] = ['r', 'g', 'b', 'a'];
-const ALL_CHANNELS_ENABLED: ChannelMask = {
-  r: true,
-  g: true,
-  b: true,
-  a: true
-};
 
 const initialCurve: ColorCurve = {
   r: [{ time: 0, value: 0 }, { time: 1, value: 1 }],
@@ -48,31 +45,28 @@ const createMinimalBasicSpace = (): LibraryCurve[] => [{
 import { AtlasViewer } from './components/AtlasViewer';
 
 export default function App() {
-  const [library, setLibrary] = useState<LibraryCurve[]>([]);
-  const [mainView, setMainView] = useState<'curve' | '2d' | '3d'>('curve');
+  const [editorState, dispatch] = useReducer(editorReducer, undefined, createInitialEditorState);
   const continuumTrackRef = useRef<HTMLDivElement>(null);
   const anchorsRef = useRef<LibraryCurve[]>([]);
-  const [draggingAnchorId, setDraggingAnchorId] = useState<string | null>(null);
-  
-  const [curveState, setCurveState] = useState({ lever: 0 });
-  const [state2d, setState2d] = useState({ lever: 0 });
-  const [state3d, setState3d] = useState({ lever: 0 });
   
   const [atlasTexture, setAtlasTexture] = useState<ImageData | null>(null);
+  const [hasHydrated, setHasHydrated] = useState(false);
 
-  const activeControlState = mainView === 'curve' ? curveState : (mainView === '2d' ? state2d : state3d);
-  const spaceLever = activeControlState.lever;
+  const { document: documentState, ui } = editorState;
+  const library = documentState.library;
+  const {
+    mainView,
+    levers,
+    activeChannel,
+    editChannels,
+    interpMode,
+    interaction
+  } = ui;
+  const spaceLever = levers[mainView];
 
   const setRawSpacePosition = (val: number) => {
-      const nextPosition = clampSpacePosition(val);
-      if (mainView === 'curve') setCurveState(prev => ({...prev, lever: nextPosition}));
-      else if (mainView === '2d') setState2d(prev => ({...prev, lever: nextPosition}));
-      else setState3d(prev => ({...prev, lever: nextPosition}));
+      dispatch({ type: 'set-space-position', mainView, position: val });
   };
-
-  const [activeChannel, setActiveChannel] = useState<Channel>('r');
-  const [editChannels, setEditChannels] = useState<ChannelMask>(ALL_CHANNELS_ENABLED);
-  const [interpMode, setInterpMode] = useState<InterpMode>('cubic');
 
   // Load from local storage / indexedDB
   useEffect(() => {
@@ -94,22 +88,17 @@ export default function App() {
         }
 
         if (savedLibrary && savedLibrary.length > 0) {
-          setLibrary(savedLibrary);
+          dispatch({ type: 'load-library', library: savedLibrary });
           
           // Load UX state
-          const uxState = await get('curve-ux-state');
-          if (uxState) {
-            
-            if (uxState.interpMode) setInterpMode(uxState.interpMode);
-            if (uxState.mainView) setMainView(uxState.mainView);
-            if (uxState.activeChannel) setActiveChannel(uxState.activeChannel);
-            if (uxState.editChannels) setEditChannels({ ...ALL_CHANNELS_ENABLED, ...uxState.editChannels });
-          }
+          dispatch({ type: 'hydrate-ui', uxState: normalizePersistedUxState(await get('curve-ux-state')) });
         } else {
-          setLibrary(createMinimalBasicSpace());
+          dispatch({ type: 'load-library', library: createMinimalBasicSpace() });
         }
       } catch (e) {
         console.error("Failed to load state", e);
+      } finally {
+        setHasHydrated(true);
       }
     };
     loadState();
@@ -117,21 +106,16 @@ export default function App() {
 
   // Save to indexedDB whenever library changes
   useEffect(() => {
-    if (library.length > 0) {
+    if (hasHydrated && library.length > 0) {
       set('curve-library', library).catch(console.error);
     }
-  }, [library]);
+  }, [hasHydrated, library]);
 
   // Save UX state
   useEffect(() => {
-    const uxState = {
-       interpMode,
-       mainView,
-       activeChannel,
-       editChannels
-    };
-    set('curve-ux-state', uxState).catch(console.error);
-  }, [interpMode, mainView, activeChannel, editChannels]);
+    if (!hasHydrated) return;
+    set('curve-ux-state', serializeUxState(ui)).catch(console.error);
+  }, [hasHydrated, ui]);
 
   const activeCategoryCurves = useMemo(() => {
     return [...library].sort((a,b) => (a.position||0) - (b.position||0));
@@ -166,33 +150,30 @@ export default function App() {
 
   const moveAnchor = (anchorId: string, position: number) => {
     const nextPosition = clampAnchorPosition(anchorId, position, anchorsRef.current);
-    setRawSpacePosition(nextPosition);
-    setLibrary(prev => sortAnchors(prev.map(anchor =>
-      anchor.id === anchorId ? { ...anchor, position: nextPosition } : anchor
-    )));
+    dispatch({ type: 'move-anchor', anchorId, position: nextPosition, mainView });
   };
 
   const handleAnchorPointerDown = (e: React.PointerEvent<HTMLDivElement>, anchorId: string) => {
     if (e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
-    setDraggingAnchorId(anchorId);
+    dispatch({ type: 'start-anchor-drag', anchorId });
     moveAnchor(anchorId, getTrackPosition(e.clientX));
     e.currentTarget.setPointerCapture(e.pointerId);
   };
 
   const handleAnchorPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!draggingAnchorId) return;
+    if (interaction.type !== 'dragging-anchor') return;
     e.preventDefault();
-    moveAnchor(draggingAnchorId, getTrackPosition(e.clientX));
+    moveAnchor(interaction.anchorId, getTrackPosition(e.clientX));
   };
 
   const handleAnchorPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!draggingAnchorId) return;
+    if (interaction.type !== 'dragging-anchor') return;
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
-    setDraggingAnchorId(null);
+    dispatch({ type: 'end-interaction' });
   };
 
   const spaceCurves = normalizedCategoryCurves;
@@ -201,47 +182,13 @@ export default function App() {
     ? blendSpaceCurves(spaceCurves, spaceLever, interpMode)
     : initialCurve;
 
-  const deferredActiveSpaceCurve = React.useDeferredValue(activeSpaceCurve);
-
   const updateActiveCurve = (newCurve: ColorCurve) => {
-    const editPosition = clampSpacePosition(spaceLever);
-
-    setLibrary(prev => {
-      const anchors = normalizeAnchors(prev);
-      const existingAnchor = anchors.find(anchor => Math.abs(anchor.position - editPosition) <= POSITION_EPSILON);
-
-      if (existingAnchor) {
-        return sortAnchors(prev.map(anchor =>
-          anchor.id === existingAnchor.id
-            ? { ...anchor, position: existingAnchor.position, curve: cloneCurve(newCurve), authored: true }
-            : anchor
-        ));
-      }
-
-      const derivedCurve = evaluateSpaceAt(editPosition, anchors, interpMode, initialCurve);
-      const newEntry: LibraryCurve = {
-        id: crypto.randomUUID(),
-        name: `Anchor ${anchors.length + 1}`,
-        category: anchors[0]?.category ?? 'default',
-        position: editPosition,
-        curve: cloneCurve(newCurve ?? derivedCurve),
-        authored: true,
-        source: 'implicit-edit'
-      };
-
-      return sortAnchors([...prev, newEntry]);
-    });
+    dispatch({ type: 'edit-active-curve', curve: newCurve, newAnchorId: crypto.randomUUID() });
   };
 
   const resetToMinimalBasicSpace = () => {
-    setLibrary(createMinimalBasicSpace());
+    dispatch({ type: 'reset-space', library: createMinimalBasicSpace() });
     setAtlasTexture(null);
-    setCurveState({ lever: 0 });
-    setState2d({ lever: 0 });
-    setState3d({ lever: 0 });
-    setEditChannels(ALL_CHANNELS_ENABLED);
-    setActiveChannel('r');
-    setDraggingAnchorId(null);
   };
 
   const categoryGradient = useMemo(() => {
@@ -360,15 +307,7 @@ export default function App() {
       : 'No channels enabled. Turn on a channel to edit.';
 
   const toggleEditChannel = (channel: Channel) => {
-    const next = { ...editChannels, [channel]: !editChannels[channel] };
-    setEditChannels(next);
-
-    if (!next[activeChannel]) {
-      const nextActive = ALL_CHANNELS.find(ch => next[ch]);
-      if (nextActive) setActiveChannel(nextActive);
-    } else if (next[channel]) {
-      setActiveChannel(channel);
-    }
+    dispatch({ type: 'toggle-edit-channel', channel });
   };
 
   return (
@@ -381,19 +320,19 @@ export default function App() {
           
           <div className="flex bg-black border border-zinc-800 rounded-lg p-1 overflow-hidden">
              <button 
-                onClick={() => setMainView('curve')}
+                onClick={() => dispatch({ type: 'set-main-view', mainView: 'curve' })}
                 className={cn("px-5 py-2 text-sm font-medium transition-colors", mainView === 'curve' ? 'bg-[#1a1c2e] text-indigo-400' : 'text-zinc-400 hover:text-zinc-200')}
              >
                 1D Curve
              </button>
              <button 
-                onClick={() => setMainView('2d')}
+                onClick={() => dispatch({ type: 'set-main-view', mainView: '2d' })}
                 className={cn("px-5 py-2 text-sm font-medium transition-colors border-l border-zinc-800", mainView === '2d' ? 'bg-[#1a1c2e] text-indigo-400' : 'text-zinc-400 hover:text-zinc-200')}
              >
                 2D Atlas
              </button>
              <button 
-                onClick={() => setMainView('3d')}
+                onClick={() => dispatch({ type: 'set-main-view', mainView: '3d' })}
                 className={cn("px-5 py-2 text-sm font-medium transition-colors border-l border-zinc-800", mainView === '3d' ? 'bg-[#1a1c2e] text-indigo-400' : 'text-zinc-400 hover:text-zinc-200')}
              >
                 3D Volume
@@ -470,7 +409,7 @@ export default function App() {
                           <span className="text-zinc-500">Interpolation</span>
                           <select
                               value={interpMode}
-                              onChange={(e) => setInterpMode(e.target.value as InterpMode)}
+                              onChange={(e) => dispatch({ type: 'set-interp-mode', interpMode: e.target.value as InterpMode })}
                               className="bg-black border border-zinc-800 text-zinc-300 rounded px-3 py-1.5 outline-none focus:border-indigo-500/50 appearance-none"
                           >
                               <option value="linear">Linear</option>
@@ -489,7 +428,7 @@ export default function App() {
                     onChange={updateActiveCurve}
                     activeChannel={activeChannel}
                     editChannels={editChannels}
-                    onActiveChannelChange={setActiveChannel}
+                    onActiveChannelChange={(channel) => dispatch({ type: 'set-active-channel', channel })}
                     interpMode={interpMode}
                  />
               </div>
@@ -564,7 +503,7 @@ export default function App() {
                                  >
                                     <div className={cn(
                                       "w-3 h-3 rounded-full bg-white shadow-md border-2 border-zinc-900 transition-transform",
-                                      draggingAnchorId === c.id && "scale-125"
+                                      interaction.type === 'dragging-anchor' && interaction.anchorId === c.id && "scale-125"
                                     )} />
                                  </div>
                              ))}

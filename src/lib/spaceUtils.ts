@@ -1,5 +1,4 @@
 import { ColorCurve, SpaceAnchor } from '../types';
-import { blendSpaceCurves, InterpMode } from './curveUtils';
 
 export const POSITION_EPSILON = 0.001;
 export const SNAP_EPSILON = 0.01;
@@ -35,14 +34,4 @@ export const snapToAnchorIfClose = (position: number, anchors: SpaceAnchor[]) =>
   return nearestAnchor && Math.abs(nearestAnchor.position - clamped) <= SNAP_EPSILON
     ? nearestAnchor.position
     : clamped;
-};
-
-export const evaluateSpaceAt = (
-  position: number,
-  anchors: SpaceAnchor[],
-  interpMode: InterpMode,
-  fallbackCurve: ColorCurve
-): ColorCurve => {
-  if (anchors.length === 0) return cloneCurve(fallbackCurve);
-  return cloneCurve(blendSpaceCurves(anchors, clampSpacePosition(position), interpMode));
 };
