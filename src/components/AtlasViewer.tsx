@@ -184,6 +184,10 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({ curves, interpMode, sp
               className="w-full h-full object-fill style-crisp-edges"
               style={{ imageRendering: 'pixelated' }}
             />
+            <div
+              className="absolute left-0 right-0 h-px bg-white/80 shadow-[0_0_6px_rgba(255,255,255,0.65)] pointer-events-none"
+              style={{ top: `${(1 - spaceLever) * 100}%` }}
+            />
           </div>
         </div>
       </div>
