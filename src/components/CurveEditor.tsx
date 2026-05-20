@@ -46,8 +46,17 @@ const CHANNEL_COLORS = {
 };
 
 const POINT_EPSILON = 0.00001;
+const DRAG_THRESHOLD_PX = 3;
+const POINT_HIT_RADIUS = 12;
 const CHANNELS: Channel[] = ['r', 'g', 'b', 'a'];
 const isEdgeOwner = (point: CurvePoint) => getEdgeOwner(point) === 'start' || getEdgeOwner(point) === 'end';
+type DragGesture = {
+  channel: Channel;
+  pointId: string;
+  startClientX: number;
+  startClientY: number;
+  hasMoved: boolean;
+};
 
 export const CurveEditor: React.FC<CurveEditorProps> = ({
   curve,
@@ -63,6 +72,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   const [draggingPoint, setDraggingPoint] = useState<{ channel: Channel, pointId: string } | null>(null);
   const [localCurve, setLocalCurve] = useState<ColorCurve>(curve);
   const liveCurveRef = useRef<ColorCurve>(curve);
+  const dragGestureRef = useRef<DragGesture | null>(null);
 
   const activeCurveData = draggingPoint ? localCurve : curve;
   const editableChannels = CHANNELS.filter(channel => editChannels[channel]);
@@ -77,6 +87,13 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     if (!canDragPoint(point)) return;
     setLocalCurve(curve);
     liveCurveRef.current = curve;
+    dragGestureRef.current = {
+      channel,
+      pointId: point.id,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      hasMoved: false
+    };
     setDraggingPoint({ channel, pointId: point.id });
     (e.target as Element).setPointerCapture(e.pointerId);
   };
@@ -108,8 +125,36 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     }, null as { channel: Channel; distance: number } | null)?.channel ?? editableChannels[0];
   };
 
+  const findNearestEditablePoint = (svgPoint: { x: number; y: number }, maxDistance = POINT_HIT_RADIUS) => {
+    return editableChannels.reduce((nearest, channel) => {
+      return activeCurveData[channel].reduce((channelNearest, point) => {
+        const dx = TIME_TO_X(point.time) - svgPoint.x;
+        const dy = VALUE_TO_Y(point.value) - svgPoint.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance > maxDistance) return channelNearest;
+        if (!channelNearest || distance < channelNearest.distance) {
+          return { channel, point, distance };
+        }
+        return channelNearest;
+      }, nearest);
+    }, null as { channel: Channel; point: CurvePoint; distance: number } | null);
+  };
+
   const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!draggingPoint || !svgRef.current) return;
+
+    const dragGesture = dragGestureRef.current;
+    if (!dragGesture) return;
+
+    if (!dragGesture.hasMoved) {
+      const dx = e.clientX - dragGesture.startClientX;
+      const dy = e.clientY - dragGesture.startClientY;
+      if (Math.sqrt(dx * dx + dy * dy) < DRAG_THRESHOLD_PX) return;
+      dragGestureRef.current = {
+        ...dragGesture,
+        hasMoved: true
+      };
+    }
 
     const point = getSvgPoint(e.clientX, e.clientY);
     if (!point) return;
@@ -148,17 +193,21 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
       if (target.hasPointerCapture?.(e.pointerId)) {
         target.releasePointerCapture(e.pointerId);
       }
-      
-      const currentCurve = liveCurveRef.current;
-      const channelData = orderCurvePoints([...currentCurve[draggingPoint.channel]]);
-      const newCurve = {
-        ...currentCurve,
-        [draggingPoint.channel]: channelData
-      };
-      
-      liveCurveRef.current = newCurve;
-      setLocalCurve(newCurve);
-      onChange(newCurve);
+
+      if (dragGestureRef.current?.hasMoved) {
+        const currentCurve = liveCurveRef.current;
+        const channelData = orderCurvePoints([...currentCurve[draggingPoint.channel]]);
+        const newCurve = {
+          ...currentCurve,
+          [draggingPoint.channel]: channelData
+        };
+        
+        liveCurveRef.current = newCurve;
+        setLocalCurve(newCurve);
+        onChange(newCurve);
+      }
+
+      dragGestureRef.current = null;
       setDraggingPoint(null);
     }
   };
@@ -166,6 +215,14 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   const handleSvgDoubleClick = (e: React.MouseEvent<SVGSVGElement>) => {
     const point = getSvgPoint(e.clientX, e.clientY);
     if (!point) return;
+
+    const nearestPoint = findNearestEditablePoint(point);
+    if (nearestPoint) {
+      e.preventDefault();
+      onActiveChannelChange(nearestPoint.channel);
+      onSelectedPointChange({ channel: nearestPoint.channel, pointId: nearestPoint.point.id });
+      return;
+    }
 
     let newTime = X_TO_TIME(point.x);
     const newValue = Y_TO_VALUE(point.y);
