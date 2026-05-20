@@ -5,6 +5,11 @@ export type CurveValidationIssue = {
   message: string;
 };
 
+export type SelectedPointRef = {
+  channel: types.Channel;
+  pointId: string;
+};
+
 const CHANNELS = ['r', 'g', 'b', 'a'] as const;
 
 const clamp = (value: number, min: number, max: number) =>
@@ -130,14 +135,12 @@ export function canDeletePoint(point: types.CurvePoint): boolean {
 export function canConvertToAuthored(point: types.CurvePoint): boolean {
   return point.edit === 'convertible'
     || point.source === 'derived'
-    || point.source === 'procedural'
     || point.source === 'imported';
 }
 
 export function shouldPreserveDuringCompression(point: types.CurvePoint): boolean {
   if (point.role === 'boundary' || point.role === 'anchor' || point.role === 'feature') return true;
   if (point.flags.includes('uncompressible')) return true;
-  if (point.flags.includes('protected')) return true;
   return false;
 }
 
@@ -151,6 +154,94 @@ export function getOutgoingInterpolation(point: types.CurvePoint): types.CurvePo
 
 export function getEdgeOwner(point: types.CurvePoint): 'start' | 'end' | undefined {
   return point.constraints?.edgeOwner;
+}
+
+export function canEditPointMetadata(point: types.CurvePoint): boolean {
+  if (point.edit === 'locked') return false;
+  if (point.source === 'procedural' && point.edit !== 'convertible') return false;
+  return true;
+}
+
+export function canEditPointRole(point: types.CurvePoint): boolean {
+  return point.role !== 'boundary' && canEditPointMetadata(point);
+}
+
+export function canEditOutgoingInterpolation(point: types.CurvePoint): boolean {
+  return getEdgeOwner(point) !== 'end' && canEditPointMetadata(point);
+}
+
+export function convertPointToAuthored(point: types.CurvePoint): types.CurvePoint {
+  return {
+    ...point,
+    source: 'authored',
+    edit: 'free'
+  };
+}
+
+export function findCurvePoint(curve: types.ColorCurve, selection: SelectedPointRef | null | undefined): types.CurvePoint | null {
+  if (!selection) return null;
+  return curve[selection.channel].find(point => point.id === selection.pointId) ?? null;
+}
+
+export function patchCurvePoint(
+  curve: types.ColorCurve,
+  selection: SelectedPointRef,
+  patcher: (point: types.CurvePoint) => types.CurvePoint
+): types.ColorCurve {
+  const channelData = curve[selection.channel];
+  if (!channelData.some(point => point.id === selection.pointId)) return curve;
+
+  return {
+    ...curve,
+    [selection.channel]: orderCurvePoints(channelData.map(point =>
+      point.id === selection.pointId ? patcher(point) : point
+    ))
+  };
+}
+
+export function patchEditableCurvePoint(
+  curve: types.ColorCurve,
+  selection: SelectedPointRef,
+  patcher: (point: types.CurvePoint) => types.CurvePoint
+): types.ColorCurve {
+  return patchCurvePoint(curve, selection, point => {
+    if (!canEditPointMetadata(point)) return point;
+    const editablePoint = canConvertToAuthored(point) ? convertPointToAuthored(point) : point;
+    return patcher(editablePoint);
+  });
+}
+
+export function setCurvePointFlag(
+  point: types.CurvePoint,
+  flag: types.CurvePointFlag,
+  enabled: boolean
+): types.CurvePoint {
+  const flags = new Set(point.flags);
+  if (enabled) {
+    flags.add(flag);
+  } else {
+    flags.delete(flag);
+  }
+  return {
+    ...point,
+    flags: Array.from(flags)
+  };
+}
+
+export function setCurvePointRole(
+  point: types.CurvePoint,
+  role: Exclude<types.CurvePointRole, 'boundary'>
+): types.CurvePoint {
+  if (!canEditPointRole(point)) return point;
+  return { ...point, role };
+}
+
+export function setCurvePointOutgoingInterpolation(
+  point: types.CurvePoint,
+  outInterpolation: types.CurvePointOutInterpolation
+): types.CurvePoint {
+  if (!canEditOutgoingInterpolation(point)) return point;
+  return { ...point, outInterpolation };
 }
 
 export function clampPointMove(point: types.CurvePoint, next: { time: number; value: number }): { time: number; value: number } {

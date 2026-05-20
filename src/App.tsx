@@ -1,8 +1,9 @@
 import React, { useReducer, useState, useEffect, useMemo, useRef } from 'react';
 import { get, set } from 'idb-keyval';
-import { ColorCurve, Channel, LibraryCurve } from './types';
+import { ColorCurve, Channel, CurvePoint, LibraryCurve } from './types';
 import { CurveEditor } from './components/CurveEditor';
 import { CurvePreview } from './components/CurvePreview';
+import { PointInspector } from './components/PointInspector';
 import { Layers, Plus, RotateCcw, Settings2 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion } from 'motion/react';
@@ -16,7 +17,14 @@ import {
   sortAnchors
 } from './lib/spaceUtils';
 import { insertTextChunk } from './lib/pngUtils';
-import { migrateKeyframesToCurvePoints, normalizeLibraryCurves } from './lib/curvePointPolicy';
+import {
+  convertPointToAuthored,
+  findCurvePoint,
+  migrateKeyframesToCurvePoints,
+  normalizeLibraryCurves,
+  patchCurvePoint,
+  patchEditableCurvePoint
+} from './lib/curvePointPolicy';
 import {
   createInitialEditorState,
   editorReducer,
@@ -61,6 +69,7 @@ export default function App() {
     activeChannel,
     editChannels,
     interpMode,
+    selectedPoint,
     interaction
   } = ui;
   const spaceLever = levers[mainView];
@@ -185,6 +194,26 @@ export default function App() {
 
   const updateActiveCurve = (newCurve: ColorCurve) => {
     dispatch({ type: 'edit-active-curve', curve: newCurve, newAnchorId: crypto.randomUUID() });
+  };
+
+  const selectedCurvePoint = useMemo(
+    () => findCurvePoint(activeSpaceCurve, selectedPoint),
+    [activeSpaceCurve, selectedPoint]
+  );
+
+  const updateSelectedPoint = (patcher: (point: CurvePoint) => CurvePoint) => {
+    if (!selectedPoint) return;
+    updateActiveCurve(patchCurvePoint(activeSpaceCurve, selectedPoint, patcher));
+  };
+
+  const updateEditableSelectedPoint = (patcher: (point: CurvePoint) => CurvePoint) => {
+    if (!selectedPoint) return;
+    updateActiveCurve(patchEditableCurvePoint(activeSpaceCurve, selectedPoint, patcher));
+  };
+
+  const convertSelectedPointToAuthored = () => {
+    if (!selectedPoint) return;
+    updateActiveCurve(patchCurvePoint(activeSpaceCurve, selectedPoint, convertPointToAuthored));
   };
 
   const resetToMinimalBasicSpace = () => {
@@ -355,15 +384,7 @@ export default function App() {
              </button>
              <button className="w-10 h-10 flex items-center justify-center rounded-md border border-zinc-800 bg-transparent text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300">
                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3h18v18H3zM8 3v18M16 3v18M3 8h18M3 16h18"></path></svg>
-             </button>
-             
-             <div className="ml-4 flex items-center justify-center border border-zinc-800 rounded-md px-4 py-1.5 bg-black gap-3">
-                 <div className="w-2.5 h-2.5 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)]" />
-                 <div className="flex flex-col">
-                    <span className="text-xs font-semibold text-zinc-200 leading-tight">Point Editor</span>
-                    <span className="text-[10px] text-zinc-500 leading-tight">Under Construction</span>
-                 </div>
-             </div>
+             </button>            
           </div>
 
           <div className="flex items-center gap-4">
@@ -407,17 +428,7 @@ export default function App() {
                  <div className="flex items-center justify-between">
                      <h3 className="text-[11px] uppercase tracking-widest font-bold text-zinc-300">Curve Editor</h3>
                      <div className="flex items-center gap-3 text-xs">
-                          <span className="text-zinc-500">Interpolation</span>
-                          <select
-                              value={interpMode}
-                              onChange={(e) => dispatch({ type: 'set-interp-mode', interpMode: e.target.value as InterpMode })}
-                              className="bg-black border border-zinc-800 text-zinc-300 rounded px-3 py-1.5 outline-none focus:border-indigo-500/50 appearance-none"
-                          >
-                              <option value="linear">Linear</option>
-                              <option value="cubic">Cubic (Hermite)</option>
-                              <option value="constant">Constant (Stepped)</option>
-                          </select>
-                          <svg className="w-3 h-3 text-zinc-500 -ml-8 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"></path></svg>
+                          <span className="text-zinc-500">Segment Out is set per point</span>
                           <button className="h-7 px-2 ml-4 flex items-center justify-center rounded border border-zinc-800 bg-black text-zinc-400 hover:text-white">
                               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle><circle cx="5" cy="12" r="1"></circle></svg>
                           </button>
@@ -429,7 +440,11 @@ export default function App() {
                     onChange={updateActiveCurve}
                     activeChannel={activeChannel}
                     editChannels={editChannels}
+                    selectedPoint={selectedPoint}
                     onActiveChannelChange={(channel) => dispatch({ type: 'set-active-channel', channel })}
+                    onSelectedPointChange={(selection) => selection
+                      ? dispatch({ type: 'select-point', selection })
+                      : dispatch({ type: 'clear-point-selection' })}
                     interpMode={interpMode}
                  />
               </div>
@@ -581,111 +596,14 @@ export default function App() {
           
           {/* Right Rail Sidebar */}
           <div className="flex flex-col gap-6 sticky top-8 transition-opacity duration-300">
-             <div className="bg-[#09090b] flex flex-col min-h-[500px]">
-                 <div className="p-4 border-b border-zinc-800 flex items-center justify-between pb-6">
-                     <h3 className="font-bold text-xs tracking-widest uppercase text-white">Point Editor</h3>
-                     <button className="text-zinc-600 hover:text-white transition-colors">
-                         <span className="sr-only">Close</span>
-                         <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"></path></svg>
-                     </button>
-                 </div>
-                 
-                 <div className="px-4 py-6 border-b border-zinc-800 flex items-center justify-between">
-                     <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
-                        <span className="text-xs font-bold tracking-widest uppercase text-zinc-300">1 POINT SELECTED</span>
-                     </div>
-                     <span className="text-xs text-blue-500 font-mono tracking-tight">Position {spaceLever.toFixed(2)}</span>
-                 </div>
-
-                 <div className="px-4 py-6 space-y-6 flex-1 text-sm font-medium">
-                     <div className="flex items-center justify-between gap-4">
-                         <label className="text-zinc-400">Type</label>
-                         <select className="bg-black border border-zinc-800 rounded px-3 py-1.5 text-zinc-300 outline-none w-3/5">
-                             <option>Smooth</option>
-                             <option>Linear</option>
-                             <option>Constant</option>
-                         </select>
-                     </div>
-                     <div className="flex items-center justify-between gap-4">
-                         <label className="text-zinc-400">Interpolation</label>
-                         <select className="bg-black border border-zinc-800 rounded px-3 py-1.5 text-zinc-300 outline-none w-3/5 text-xs">
-                             <option>Cubic (Hermite)</option>
-                             <option>Catmull-Rom</option>
-                             <option>Linear</option>
-                         </select>
-                     </div>
-
-                     <div className="space-y-4 pt-4 border-t border-zinc-800">
-                         <div className="flex items-center justify-between gap-4">
-                             <label className="text-zinc-400">Tension</label>
-                             <div className="flex items-center gap-2 flex-1">
-                                 <input type="range" className="flex-1 h-1 bg-zinc-800 accent-blue-500 rounded appearance-none cursor-pointer" defaultValue={0} min={-1} max={1} step={0.01} />
-                                 <div className="bg-black border border-zinc-800 px-2 py-1 rounded w-12 text-center text-xs text-zinc-300 font-mono">0.00</div>
-                             </div>
-                         </div>
-                         <div className="flex items-center justify-between gap-4">
-                             <label className="text-zinc-400">Continuity</label>
-                             <div className="flex items-center gap-2 flex-1">
-                                 <input type="range" className="flex-1 h-1 bg-zinc-800 accent-blue-500 rounded appearance-none cursor-pointer" defaultValue={0} min={-1} max={1} step={0.01} />
-                                 <div className="bg-black border border-zinc-800 px-2 py-1 rounded w-12 text-center text-xs text-zinc-300 font-mono">0.00</div>
-                             </div>
-                         </div>
-                         <div className="flex items-center justify-between gap-4">
-                             <label className="text-zinc-400">Bias</label>
-                             <div className="flex items-center gap-2 flex-1">
-                                 <input type="range" className="flex-1 h-1 bg-zinc-800 accent-blue-500 rounded appearance-none cursor-pointer" defaultValue={0} min={-1} max={1} step={0.01} />
-                                 <div className="bg-black border border-zinc-800 px-2 py-1 rounded w-12 text-center text-xs text-zinc-300 font-mono">0.00</div>
-                             </div>
-                         </div>
-                     </div>
-
-                     <div className="space-y-4 pt-4 border-t border-zinc-800">
-                         <label className="text-zinc-400 mb-2 block">Behavior</label>
-                         
-                         <div className="flex items-center justify-between">
-                             <label className="flex items-center gap-3 cursor-pointer">
-                                 <div className="w-4 h-4 rounded border border-zinc-700 bg-black flex items-center justify-center">
-                                 </div>
-                                 <span className="text-zinc-300 text-sm">Compression Protected</span>
-                             </label>
-                             <svg className="w-4 h-4 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0110 0v4"></path></svg>
-                         </div>
-                         <div className="flex items-center justify-between">
-                             <label className="flex items-center gap-3 cursor-pointer">
-                                 <div className="w-4 h-4 rounded border border-zinc-700 bg-black flex items-center justify-center">
-                                 </div>
-                                 <span className="text-zinc-300 text-sm">Derived (Auto)</span>
-                             </label>
-                             <svg className="w-4 h-4 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                         </div>
-                         <div className="flex items-center justify-between">
-                             <label className="flex items-center gap-3 cursor-pointer">
-                                 <div className="w-4 h-4 rounded border border-zinc-700 bg-black flex items-center justify-center">
-                                 </div>
-                                 <span className="text-zinc-300 text-sm">Procedural</span>
-                             </label>
-                             <svg className="w-4 h-4 text-zinc-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-                         </div>
-                     </div>
-
-                     <div className="space-y-4 pt-4 border-t border-zinc-800">
-                         <label className="text-zinc-400 block text-xs">Neighborhood Influence</label>
-                         <div className="flex items-center gap-4">
-                             <input type="range" className="flex-1 h-1 bg-zinc-800 accent-blue-500 rounded appearance-none cursor-pointer" defaultValue={1} min={0} max={2} step={0.01} />
-                             <div className="bg-black border border-zinc-800 px-2 py-1 rounded w-12 text-center text-xs text-zinc-300 font-mono">1.00</div>
-                         </div>
-                     </div>
-                     
-                     <div className="space-y-2 pt-4 border-t border-zinc-800">
-                         <label className="text-zinc-400 block text-xs">Notes</label>
-                         <textarea 
-                             className="w-full bg-black border border-zinc-800 rounded-md p-3 text-sm text-zinc-300 outline-none resize-none h-16 placeholder:text-zinc-700" 
-                             placeholder="Add note..."
-                         />
-                     </div>
-                 </div>
-             </div>
+             <PointInspector
+                point={selectedCurvePoint}
+                channelLabel={selectedPoint?.channel.toUpperCase()}
+                onPatchPoint={updateSelectedPoint}
+                onPatchEditablePoint={updateEditableSelectedPoint}
+                onConvertToAuthored={convertSelectedPointToAuthored}
+                onClearSelection={() => dispatch({ type: 'clear-point-selection' })}
+             />
           </div>
         </div>
 

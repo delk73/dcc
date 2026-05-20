@@ -8,6 +8,7 @@ import {
   sortAnchors
 } from '../lib/spaceUtils';
 import { normalizeLibraryCurves } from '../lib/curvePointPolicy';
+import type { SelectedPointRef } from '../lib/curvePointPolicy';
 
 export type MainView = 'curve' | '2d' | '3d';
 
@@ -25,6 +26,7 @@ export type EditorUiState = {
   activeChannel: Channel;
   editChannels: ChannelMask;
   interpMode: InterpMode;
+  selectedPoint: SelectedPointRef | null;
   interaction: InteractionState;
 };
 
@@ -66,6 +68,7 @@ export const createInitialEditorState = (): EditorState => ({
     activeChannel: 'r',
     editChannels: ALL_CHANNELS_ENABLED,
     interpMode: 'cubic',
+    selectedPoint: null,
     interaction: { type: 'idle' }
   }
 });
@@ -77,6 +80,8 @@ export type EditorAction =
   | { type: 'set-space-position'; mainView: MainView; position: number }
   | { type: 'set-interp-mode'; interpMode: InterpMode }
   | { type: 'set-active-channel'; channel: Channel }
+  | { type: 'select-point'; selection: SelectedPointRef }
+  | { type: 'clear-point-selection' }
   | { type: 'set-edit-channels'; editChannels: ChannelMask }
   | { type: 'toggle-edit-channel'; channel: Channel }
   | { type: 'edit-active-curve'; curve: ColorCurve; newAnchorId: string }
@@ -147,6 +152,25 @@ export const editorReducer = (state: EditorState, action: EditorAction): EditorS
         }
       };
 
+    case 'select-point':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          activeChannel: action.selection.channel,
+          selectedPoint: action.selection
+        }
+      };
+
+    case 'clear-point-selection':
+      return {
+        ...state,
+        ui: {
+          ...state.ui,
+          selectedPoint: null
+        }
+      };
+
     case 'set-edit-channels':
       return {
         ...state,
@@ -170,7 +194,10 @@ export const editorReducer = (state: EditorState, action: EditorAction): EditorS
         ui: {
           ...state.ui,
           activeChannel,
-          editChannels
+          editChannels,
+          selectedPoint: editChannels[state.ui.selectedPoint?.channel ?? state.ui.activeChannel]
+            ? state.ui.selectedPoint
+            : null
         }
       };
     }
@@ -257,6 +284,7 @@ export const editorReducer = (state: EditorState, action: EditorAction): EditorS
           },
           activeChannel: 'r',
           editChannels: ALL_CHANNELS_ENABLED,
+          selectedPoint: null,
           interaction: { type: 'idle' }
         }
       };

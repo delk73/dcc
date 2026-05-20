@@ -9,7 +9,8 @@ import {
   createAuthoredInteriorPoint,
   getEdgeOwner,
   getOutgoingInterpolation,
-  orderCurvePoints
+  orderCurvePoints,
+  type SelectedPointRef
 } from '../lib/curvePointPolicy';
 
 interface CurveEditorProps {
@@ -17,7 +18,9 @@ interface CurveEditorProps {
   onChange: (curve: ColorCurve) => void;
   activeChannel: Channel;
   editChannels: ChannelMask;
+  selectedPoint: SelectedPointRef | null;
   onActiveChannelChange: (channel: Channel) => void;
+  onSelectedPointChange: (selection: SelectedPointRef | null) => void;
   interpMode: InterpMode;
 }
 
@@ -51,13 +54,15 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   onChange,
   activeChannel,
   editChannels,
+  selectedPoint,
   onActiveChannelChange,
+  onSelectedPointChange,
   interpMode
 }) => {
   const svgRef = useRef<SVGSVGElement>(null);
-  const [draggingPoint, setDraggingPoint] = useState<{ channel: Channel, index: number } | null>(null);
+  const [draggingPoint, setDraggingPoint] = useState<{ channel: Channel, pointId: string } | null>(null);
   const [localCurve, setLocalCurve] = useState<ColorCurve>(curve);
-  const lastUpdateRef = useRef<number>(0);
+  const liveCurveRef = useRef<ColorCurve>(curve);
 
   const activeCurveData = draggingPoint ? localCurve : curve;
   const editableChannels = CHANNELS.filter(channel => editChannels[channel]);
@@ -65,11 +70,14 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   const handlePointerDown = (e: React.PointerEvent<SVGElement>, channel: Channel, pointIndex: number) => {
     if (e.button !== 0) return;
     if (!editChannels[channel]) return;
-    if (!canDragPoint(curve[channel][pointIndex])) return;
+    const point = curve[channel][pointIndex];
     e.stopPropagation();
     onActiveChannelChange(channel);
+    onSelectedPointChange({ channel, pointId: point.id });
+    if (!canDragPoint(point)) return;
     setLocalCurve(curve);
-    setDraggingPoint({ channel, index: pointIndex });
+    liveCurveRef.current = curve;
+    setDraggingPoint({ channel, pointId: point.id });
     (e.target as Element).setPointerCapture(e.pointerId);
   };
 
@@ -109,8 +117,10 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     const newTime = X_TO_TIME(point.x);
     const newValue = Y_TO_VALUE(point.y);
 
-    const channelData = [...localCurve[draggingPoint.channel]];
-    const index = draggingPoint.index;
+    const currentCurve = liveCurveRef.current;
+    const channelData = [...currentCurve[draggingPoint.channel]];
+    const index = channelData.findIndex(point => point.id === draggingPoint.pointId);
+    if (index === -1) return;
     const currentPoint = channelData[index];
     if (!canDragPoint(currentPoint)) return;
 
@@ -123,33 +133,30 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     };
 
     const newCurve = {
-      ...localCurve,
+      ...currentCurve,
       [draggingPoint.channel]: channelData
     };
     
+    liveCurveRef.current = newCurve;
     setLocalCurve(newCurve);
-
-    // Throttle external onChange to avoid extreme lag from heavy parent components
-    const now = performance.now();
-    if (now - lastUpdateRef.current > 60) {
-      onChange(newCurve);
-      lastUpdateRef.current = now;
-    }
+    onChange(newCurve);
   };
 
   const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
     if (draggingPoint) {
       const target = e.target as Element;
-      if (target.hasPointerCapture(e.pointerId)) {
+      if (target.hasPointerCapture?.(e.pointerId)) {
         target.releasePointerCapture(e.pointerId);
       }
       
-      const channelData = orderCurvePoints([...localCurve[draggingPoint.channel]]);
+      const currentCurve = liveCurveRef.current;
+      const channelData = orderCurvePoints([...currentCurve[draggingPoint.channel]]);
       const newCurve = {
-        ...localCurve,
+        ...currentCurve,
         [draggingPoint.channel]: channelData
       };
       
+      liveCurveRef.current = newCurve;
       setLocalCurve(newCurve);
       onChange(newCurve);
       setDraggingPoint(null);
@@ -175,20 +182,22 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
       newTime = Math.max(minTime, Math.min(newTime, maxTime));
     }
 
+    const newPoint = createAuthoredInteriorPoint(newTime, newValue);
     const channelData = currentChannelData.length >= 2
       ? orderCurvePoints([
           currentChannelData[0],
           ...currentChannelData.slice(1, -1),
-          createAuthoredInteriorPoint(newTime, newValue),
+          newPoint,
           currentChannelData[currentChannelData.length - 1]
         ])
-      : orderCurvePoints([...currentChannelData, createAuthoredInteriorPoint(newTime, newValue)]);
+      : orderCurvePoints([...currentChannelData, newPoint]);
     const newCurve = {
       ...activeCurveData,
       [targetChannel]: channelData
     };
     
     setLocalCurve(newCurve);
+    onSelectedPointChange({ channel: targetChannel, pointId: newPoint.id });
     onChange(newCurve);
   };
 
@@ -198,7 +207,8 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     
     const channelData = [...activeCurveData[channel]];
     if (!editChannels[channel]) return;
-    if (channelData.length <= 2 || !canDeletePoint(channelData[index])) return;
+    const point = channelData[index];
+    if (channelData.length <= 2 || !canDeletePoint(point)) return;
     
     setDraggingPoint(null);
     channelData.splice(index, 1);
@@ -208,6 +218,9 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     };
     
     setLocalCurve(newCurve);
+    if (selectedPoint?.channel === channel && selectedPoint.pointId === point.id) {
+      onSelectedPointChange(null);
+    }
     onChange(newCurve);
   };
 
@@ -356,12 +369,20 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
             const x = TIME_TO_X(k.time);
             const y = VALUE_TO_Y(k.value);
             const canRemove = data.length > 2 && canDeletePoint(k);
-            const radius = isActive ? (isDraggingThis && draggingPoint?.index === i ? 8 : 6) : 4;
+            const isSelected = selectedPoint?.channel === channel && selectedPoint.pointId === k.id;
+            const isDraggingPoint = isDraggingThis && draggingPoint?.pointId === k.id;
+            const radius = isActive ? (isDraggingPoint ? 8 : 6) : 4;
             const canMove = canDragPoint(k);
+            const isProtected = k.flags.includes('protected');
+            const isPreserved = k.flags.includes('uncompressible');
+            const markerOpacity = k.role === 'sample' ? 0.62 : 1;
+            const markerStroke = isProtected ? '#f8fafc' : isSelected ? '#ffffff' : '#18181b';
+            const markerStrokeWidth = isProtected || isSelected ? 2.5 : 2;
+            const title = canRemove ? 'Right-click to remove point' : isEdgeOwner(k) ? 'Boundary edge owner' : 'Protected point';
 
             return (
                 <g
-                    key={`${channel}-${i}`}
+                    key={`${channel}-${k.id}`}
                     className={cn(
                       "outline-none",
                       editChannels[channel] && (canMove ? (canRemove ? "cursor-pointer" : "cursor-grab") : "cursor-not-allowed")
@@ -370,35 +391,61 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
                     onContextMenu={(e) => handlePointContextMenu(e, channel, i)}
                     onDoubleClick={(e) => e.stopPropagation()}
                 >
-                    <title>{canRemove ? 'Right-click to remove point' : isEdgeOwner(k) ? 'Boundary edge owner' : 'Protected point'}</title>
-                    <circle
-                        cx={x}
-                        cy={y}
-                        r={radius}
-                        fill={CHANNEL_COLORS[channel]}
-                        stroke="#18181b"
-                        strokeWidth={2}
-                        className="transition-colors"
-                    />
-                    {canRemove && (
+                    <title>{title}</title>
+                    {isSelected && (
                       <circle
                           cx={x}
                           cy={y}
-                          r={Math.max(2, radius * 0.45)}
+                          r={radius + 5}
+                          fill="none"
+                          stroke="white"
+                          strokeWidth={1.25}
+                          opacity={0.72}
+                          style={{ pointerEvents: 'none' }}
+                      />
+                    )}
+                    {k.role === 'feature' ? (
+                      <rect
+                          x={x - radius}
+                          y={y - radius}
+                          width={radius * 2}
+                          height={radius * 2}
+                          transform={`rotate(45 ${x} ${y})`}
+                          fill={CHANNEL_COLORS[channel]}
+                          opacity={markerOpacity}
+                          stroke={markerStroke}
+                          strokeWidth={markerStrokeWidth}
+                          className="transition-colors"
+                      />
+                    ) : (
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r={k.role === 'sample' ? Math.max(3, radius - 1.5) : radius}
+                        fill={k.role === 'boundary' ? '#09090b' : CHANNEL_COLORS[channel]}
+                        opacity={markerOpacity}
+                        stroke={k.role === 'boundary' ? CHANNEL_COLORS[channel] : markerStroke}
+                        strokeWidth={k.role === 'boundary' ? markerStrokeWidth + 0.5 : markerStrokeWidth}
+                        className="transition-colors"
+                      />
+                    )}
+                    {k.role === 'anchor' && (
+                      <circle
+                          cx={x}
+                          cy={y}
+                          r={Math.max(1.5, radius * 0.34)}
                           fill="#000"
                           stroke="none"
                           style={{ pointerEvents: 'none' }}
                       />
                     )}
-                    {isActive && (
+                    {(canRemove || isPreserved) && k.role !== 'feature' && (
                       <circle
                           cx={x}
                           cy={y}
-                          r={radius + 3}
-                          fill="none"
-                          stroke="white"
-                          strokeWidth={1}
-                          opacity={canRemove ? 0 : 0.35}
+                          r={Math.max(2, radius * 0.45)}
+                          fill={isPreserved ? '#f8fafc' : '#000'}
+                          stroke="none"
                           style={{ pointerEvents: 'none' }}
                       />
                     )}
