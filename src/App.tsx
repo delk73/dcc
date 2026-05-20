@@ -2,7 +2,6 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { get, set } from 'idb-keyval';
 import { ColorCurve, Channel, LibraryCurve } from './types';
 import { CurveEditor } from './components/CurveEditor';
-import { CurveExporter } from './components/CurveExporter';
 import { CurvePreview } from './components/CurvePreview';
 import { Library, Plus, Trash2, FolderOpen, Layers, Settings2, Download, Edit2, Copy } from 'lucide-react';
 import { cn } from './lib/utils';
@@ -680,30 +679,6 @@ export default function App() {
                     </div>
                 </div>
 
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl">
-                <h3 className="font-medium text-sm border-b border-zinc-800 pb-3 mb-4 flex items-center gap-2">
-                    <Download className="w-4 h-4 text-zinc-400" />
-                    Export Asset
-                </h3>
-                <CurveExporter curve={deferredActiveSpaceCurve} interpMode={interpMode} />
-                
-                {normalizedCategoryCurves.length > 1 && (
-                <div className="pt-4 mt-6 border-t border-zinc-800 space-y-3">
-                    <button 
-                        onClick={handleExportLibraryLUT}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 rounded-xl font-medium text-sm transition-colors border border-indigo-500/20 hover:border-indigo-500/40"
-                    >
-                        <Download className="w-4 h-4" />
-                        Export 2D LUT Atlas
-                    </button>
-                    <p className="text-[10px] text-zinc-500 text-center leading-tight">
-                        {exportWidth}x{exportHeight} texture &bull; Full Variant Space Interpolation<br/>
-                        Provenance metadata encoded in PNG
-                    </p>
-                </div>
-                )}
-            </div>
-
             </div>
             )}
             
@@ -716,6 +691,8 @@ export default function App() {
                             spaceLever={spaceLever} 
                             setSpaceLever={setSpacePosition}
                             onTextureUpdate={setAtlasTexture}
+                            onExportAtlas={handleExportLibraryLUT}
+                            canExportAtlas={normalizedCategoryCurves.length > 1}
                         />
                         <motion.div
                             layout
@@ -728,29 +705,6 @@ export default function App() {
                                 sampleY={spaceLever}
                             />
 
-                            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl">
-                                <h3 className="font-medium text-sm border-b border-zinc-800 pb-3 mb-4 flex items-center gap-2">
-                                    <Download className="w-4 h-4 text-zinc-400" />
-                                    Export Asset
-                                </h3>
-                                <CurveExporter curve={deferredActiveSpaceCurve} interpMode={interpMode} />
-
-                                {normalizedCategoryCurves.length > 1 && (
-                                <div className="pt-4 mt-6 border-t border-zinc-800 space-y-3">
-                                    <button
-                                        onClick={handleExportLibraryLUT}
-                                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 rounded-xl font-medium text-sm transition-colors border border-indigo-500/20 hover:border-indigo-500/40"
-                                    >
-                                        <Download className="w-4 h-4" />
-                                        Export 2D LUT Atlas
-                                    </button>
-                                    <p className="text-[10px] text-zinc-500 text-center leading-tight">
-                                        {exportWidth}x{exportHeight} texture &bull; Full Variant Space Interpolation<br/>
-                                        Provenance metadata encoded in PNG
-                                    </p>
-                                </div>
-                                )}
-                            </div>
                         </motion.div>
                     </motion.div>
                 </div>
@@ -769,7 +723,7 @@ export default function App() {
                    </button>
                 </div>
             )}
-            
+
           </div>
           
           {/* Right Rail Sidebar */}

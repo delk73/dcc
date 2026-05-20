@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { LibraryCurve } from '../types';
 import { InterpMode, computeTangents, evaluateCurve } from '../lib/curveUtils';
+import { Download } from 'lucide-react';
 
 interface AtlasViewerProps {
   curves: LibraryCurve[];
@@ -8,9 +9,11 @@ interface AtlasViewerProps {
   spaceLever: number;
   setSpaceLever: (val: number) => void;
   onTextureUpdate?: (tex: ImageData) => void;
+  onExportAtlas?: () => void;
+  canExportAtlas?: boolean;
 }
 
-export const AtlasViewer: React.FC<AtlasViewerProps> = ({ curves, interpMode, spaceLever, setSpaceLever, onTextureUpdate }) => {
+export const AtlasViewer: React.FC<AtlasViewerProps> = ({ curves, interpMode, spaceLever, setSpaceLever, onTextureUpdate, onExportAtlas, canExportAtlas = true }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [mergedAtlas, setMergedAtlas] = useState<string | null>(() => {
       try { return localStorage.getItem('drawing-merged-atlas') || null; } catch { return null; }
@@ -147,6 +150,16 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({ curves, interpMode, sp
       <div className="flex flex-col gap-4 bg-zinc-900 border border-zinc-800 rounded-xl p-4 shadow-xl">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-zinc-100 font-medium tracking-tight">2D Interpolation Atlas</h3>
+          {onExportAtlas && (
+            <button
+              onClick={onExportAtlas}
+              disabled={!canExportAtlas}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-zinc-800 text-[10px] uppercase tracking-wider text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Download className="w-3.5 h-3.5" />
+              Export 2D
+            </button>
+          )}
         </div>
         
         <div className="w-full transition-all duration-300">

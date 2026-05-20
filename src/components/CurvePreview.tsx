@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ColorCurve } from '../types';
 import { cn } from '../lib/utils';
 import { evaluateCurve, computeTangents, InterpMode } from '../lib/curveUtils';
+import { Download } from 'lucide-react';
 
 interface CurvePreviewProps {
   curve: ColorCurve;
@@ -14,6 +15,16 @@ export const CurvePreview: React.FC<CurvePreviewProps> = ({ curve, interpMode, t
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [channels, setChannels] = useState({ r: true, g: true, b: true, a: true });
   const [diag, setDiag] = useState<'none' | 'heat' | 'vector' | 'luma'>('none');
+
+  const handleDownloadPreview = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = textureData ? 'SpacePreview_Row.png' : 'ColorCurve_Preview.png';
+    a.click();
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -129,7 +140,14 @@ export const CurvePreview: React.FC<CurvePreviewProps> = ({ curve, interpMode, t
     <div className="flex flex-col gap-4 bg-[#09090b] border border-zinc-800 rounded-xl p-6">
       <div className="flex items-center justify-between">
         <h3 className="text-zinc-100 font-bold text-[11px] tracking-widest uppercase">PREVIEW <span className="text-zinc-500 font-normal normal-case tracking-normal">(Output)</span></h3>
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
+             <button
+                onClick={handleDownloadPreview}
+                className="flex items-center gap-1.5 px-2 py-1 rounded border border-zinc-800 text-[10px] uppercase tracking-wider text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
+             >
+                <Download className="w-3.5 h-3.5" />
+                PNG
+             </button>
              <button className="text-zinc-500 hover:text-zinc-300">
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path></svg>
              </button>
