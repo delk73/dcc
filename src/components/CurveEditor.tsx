@@ -258,7 +258,6 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
             const y = VALUE_TO_Y(k.value);
             const canRemove = data.length > 2 && !isBoundaryPoint(k);
             const radius = isActive ? (draggingPoint?.index === i ? 8 : 6) : 4;
-            const outerRadius = canRemove ? radius + 2 : radius;
 
             return (
                 <g
@@ -271,33 +270,22 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
                     onContextMenu={(e) => handlePointContextMenu(e, channel, i)}
                 >
                     <title>{canRemove ? 'Right-click to remove point' : 'Dependent boundary point'}</title>
-                    {canRemove && (
-                      <circle
-                          cx={x}
-                          cy={y}
-                          r={outerRadius}
-                          fill="#050505"
-                          stroke="rgba(255,255,255,0.72)"
-                          strokeWidth={1.5}
-                      />
-                    )}
                     <circle
                         cx={x}
                         cy={y}
                         r={radius}
-                        fill={canRemove ? '#09090b' : CHANNEL_COLORS[channel]}
-                        stroke={canRemove ? CHANNEL_COLORS[channel] : '#18181b'}
-                        strokeWidth={canRemove ? 3 : 2}
+                        fill={CHANNEL_COLORS[channel]}
+                        stroke="#18181b"
+                        strokeWidth={2}
                         className="transition-colors"
                     />
                     {canRemove && (
                       <circle
                           cx={x}
                           cy={y}
-                          r={Math.max(2.25, radius * 0.42)}
+                          r={Math.max(2, radius * 0.45)}
                           fill="#000"
-                          stroke="rgba(255,255,255,0.32)"
-                          strokeWidth={0.75}
+                          stroke="none"
                           style={{ pointerEvents: 'none' }}
                       />
                     )}
