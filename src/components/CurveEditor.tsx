@@ -31,6 +31,8 @@ const CHANNEL_COLORS = {
   a: '#a8a29e'
 };
 
+const isBoundaryPoint = (point: Keyframe) => point.time <= 0.00001 || point.time >= 0.99999;
+
 export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activeChannel, interpMode }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [draggingPoint, setDraggingPoint] = useState<{ channel: Channel, index: number } | null>(null);
@@ -131,7 +133,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
     e.stopPropagation();
     
     const channelData = [...activeCurveData[channel]];
-    if (channelData.length <= 1) return;
+    if (channelData.length <= 2 || isBoundaryPoint(channelData[index])) return;
     
     channelData.splice(index, 1);
     const newCurve = {
@@ -254,19 +256,64 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
         {data.map((k, i) => {
             const x = TIME_TO_X(k.time);
             const y = VALUE_TO_Y(k.value);
+            const canRemove = data.length > 2 && !isBoundaryPoint(k);
+            const radius = isActive ? (draggingPoint?.index === i ? 8 : 6) : 4;
+            const outerRadius = canRemove ? radius + 2 : radius;
+
             return (
-                <circle
+                <g
                     key={`${channel}-${i}`}
-                    cx={x}
-                    cy={y}
-                    r={isActive ? (draggingPoint?.index === i ? 8 : 6) : 4}
-                    fill={CHANNEL_COLORS[channel]}
-                    stroke="#18181b"
-                    strokeWidth={2}
-                    className="cursor-pointer hover:stroke-white transition-colors outline-none"
+                    className={cn(
+                      "outline-none",
+                      canRemove ? "cursor-pointer" : "cursor-grab"
+                    )}
                     onPointerDown={(e) => handlePointerDown(e, channel, i)}
                     onContextMenu={(e) => handlePointContextMenu(e, channel, i)}
-                />
+                >
+                    <title>{canRemove ? 'Right-click to remove point' : 'Dependent boundary point'}</title>
+                    {canRemove && (
+                      <circle
+                          cx={x}
+                          cy={y}
+                          r={outerRadius}
+                          fill="#050505"
+                          stroke="rgba(255,255,255,0.72)"
+                          strokeWidth={1.5}
+                      />
+                    )}
+                    <circle
+                        cx={x}
+                        cy={y}
+                        r={radius}
+                        fill={canRemove ? '#09090b' : CHANNEL_COLORS[channel]}
+                        stroke={canRemove ? CHANNEL_COLORS[channel] : '#18181b'}
+                        strokeWidth={canRemove ? 3 : 2}
+                        className="transition-colors"
+                    />
+                    {canRemove && (
+                      <circle
+                          cx={x}
+                          cy={y}
+                          r={Math.max(2.25, radius * 0.42)}
+                          fill="#000"
+                          stroke="rgba(255,255,255,0.32)"
+                          strokeWidth={0.75}
+                          style={{ pointerEvents: 'none' }}
+                      />
+                    )}
+                    {isActive && (
+                      <circle
+                          cx={x}
+                          cy={y}
+                          r={radius + 3}
+                          fill="none"
+                          stroke="white"
+                          strokeWidth={1}
+                          opacity={canRemove ? 0 : 0.35}
+                          style={{ pointerEvents: 'none' }}
+                      />
+                    )}
+                </g>
             );
         })}
       </g>
