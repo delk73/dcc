@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { get, set } from 'idb-keyval';
 import { ColorCurve, Channel, LibraryCurve } from './types';
 import { CurveEditor } from './components/CurveEditor';
@@ -6,7 +6,7 @@ import { CurveExporter } from './components/CurveExporter';
 import { CurvePreview } from './components/CurvePreview';
 import { Library, Plus, Trash2, FolderOpen, Layers, Settings2, Download, Edit2, Copy } from 'lucide-react';
 import { cn } from './lib/utils';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { InterpMode, computeTangents, evaluateCurve, blendSpaceCurves } from './lib/curveUtils';
 import { insertTextChunk } from './lib/pngUtils';
 
@@ -72,6 +72,9 @@ import { AtlasViewer } from './components/AtlasViewer';
 export default function App() {
   const [library, setLibrary] = useState<LibraryCurve[]>([]);
   const [mainView, setMainView] = useState<'curve' | '2d' | '3d'>('curve');
+  const continuumTrackRef = useRef<HTMLDivElement>(null);
+  const anchorsRef = useRef<LibraryCurve[]>([]);
+  const [draggingAnchorId, setDraggingAnchorId] = useState<string | null>(null);
   
   const [curveState, setCurveState] = useState({ lever: 0, wrap: false, blend: 0.1 });
   const [state2d, setState2d] = useState({ lever: 0, wrap: false, blend: 0.1 });
@@ -84,7 +87,6 @@ export default function App() {
   
   const [batchCount, setBatchCount] = useState(5);
 
-  const [isDrawingMode, setIsDrawingMode] = useState(false);
   const [atlasTexture, setAtlasTexture] = useState<ImageData | null>(null);
 
   const activeControlState = mainView === 'curve' ? curveState : (mainView === '2d' ? state2d : state3d);
@@ -184,8 +186,57 @@ export default function App() {
      return normalizeAnchors(activeCategoryCurves);
   }, [activeCategoryCurves]);
 
+  anchorsRef.current = normalizedCategoryCurves;
+
   const setSpacePosition = (position: number) => {
     setRawSpacePosition(snapToAnchorIfClose(position, normalizedCategoryCurves));
+  };
+
+  const getTrackPosition = (clientX: number) => {
+    const rect = continuumTrackRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0) return spaceLever;
+    return clampSpacePosition((clientX - rect.left) / rect.width);
+  };
+
+  const clampAnchorPosition = (anchorId: string, position: number, anchors: LibraryCurve[]) => {
+    const sorted = sortAnchors(anchors);
+    const anchorIndex = sorted.findIndex(anchor => anchor.id === anchorId);
+    if (anchorIndex === -1) return clampSpacePosition(position);
+
+    const min = anchorIndex > 0 ? sorted[anchorIndex - 1].position + POSITION_EPSILON : 0;
+    const max = anchorIndex < sorted.length - 1 ? sorted[anchorIndex + 1].position - POSITION_EPSILON : 1;
+    return Math.max(min, Math.min(max, clampSpacePosition(position)));
+  };
+
+  const moveAnchor = (anchorId: string, position: number) => {
+    const nextPosition = clampAnchorPosition(anchorId, position, anchorsRef.current);
+    setRawSpacePosition(nextPosition);
+    setLibrary(prev => sortAnchors(prev.map(anchor =>
+      anchor.id === anchorId ? { ...anchor, position: nextPosition } : anchor
+    )));
+  };
+
+  const handleAnchorPointerDown = (e: React.PointerEvent<HTMLDivElement>, anchorId: string) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setDraggingAnchorId(anchorId);
+    moveAnchor(anchorId, getTrackPosition(e.clientX));
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const handleAnchorPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!draggingAnchorId) return;
+    e.preventDefault();
+    moveAnchor(draggingAnchorId, getTrackPosition(e.clientX));
+  };
+
+  const handleAnchorPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!draggingAnchorId) return;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    setDraggingAnchorId(null);
   };
 
   const spaceCurves = useMemo(() => {
@@ -453,7 +504,7 @@ export default function App() {
           </div>
         </header>
 
-        <div className={cn("grid grid-cols-1 gap-8 items-start", isDrawingMode ? "xl:grid-cols-[1fr_260px]" : "xl:grid-cols-[1fr_320px]")}>
+        <div className="grid grid-cols-1 gap-8 items-start xl:grid-cols-[1fr_320px]">
             
           {/* Main Area (Editor + Generate) */}
           <div className={cn("space-y-8", "min-w-0")}>
@@ -558,7 +609,7 @@ export default function App() {
                         </div>
                     </div>
                     
-                    <div className="relative pt-6 pb-8 mx-4">
+                    <div ref={continuumTrackRef} className="relative pt-6 pb-8 mx-4">
                          <div className="absolute top-1/2 -mt-1 left-0 right-0 h-2 rounded-full overflow-hidden opacity-50" style={{ background: categoryGradient }} />
                          
                          {/* Axis labels */}
@@ -571,13 +622,31 @@ export default function App() {
                          </div>
                          
                          {/* Anchor Ticks */}
-                         <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 pointer-events-none z-20">
+                         <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 pointer-events-none z-40">
                              {normalizedCategoryCurves.map((c, i) => (
                                  <div 
                                     key={c.id}
-                                    className="absolute w-3 h-3 rounded-full bg-white shadow-md border-2 border-zinc-900 -mt-1.5 -ml-1.5"
+                                    role="slider"
+                                    aria-label={`Authored anchor at ${(c.position || 0).toFixed(2)}`}
+                                    aria-valuemin={0}
+                                    aria-valuemax={1}
+                                    aria-valuenow={c.position || 0}
+                                    tabIndex={0}
+                                    className={cn(
+                                      "pointer-events-auto absolute w-5 h-5 -mt-2.5 -ml-2.5 rounded-full cursor-grab active:cursor-grabbing",
+                                      "flex items-center justify-center touch-none"
+                                    )}
                                     style={{ left: `${(c.position || 0) * 100}%` }}
-                                 />
+                                    onPointerDown={(e) => handleAnchorPointerDown(e, c.id)}
+                                    onPointerMove={handleAnchorPointerMove}
+                                    onPointerUp={handleAnchorPointerUp}
+                                    onPointerCancel={handleAnchorPointerUp}
+                                 >
+                                    <div className={cn(
+                                      "w-3 h-3 rounded-full bg-white shadow-md border-2 border-zinc-900 transition-transform",
+                                      draggingAnchorId === c.id && "scale-125"
+                                    )} />
+                                 </div>
                              ))}
                          </div>
                          
@@ -646,58 +715,43 @@ export default function App() {
                             interpMode={interpMode} 
                             spaceLever={spaceLever} 
                             setSpaceLever={setSpacePosition}
-                            wrapSpace={wrapSpace}
-                            setWrapSpace={setWrapSpace}
-                            loopBlend={loopBlend}
-                            setLoopBlend={setLoopBlend}
-                            isDrawingMode={isDrawingMode}
-                            setIsDrawingMode={setIsDrawingMode}
                             onTextureUpdate={setAtlasTexture}
                         />
-                        
-                        <AnimatePresence>
-                            {!isDrawingMode && (
-                                <motion.div 
-                                    layout
-                                    initial={{ opacity: 0, height: 0 }}
-                                    animate={{ opacity: 1, height: 'auto' }}
-                                    exit={{ opacity: 0, height: 0 }}
-                                    transition={{ duration: 0.3 }}
-                                    className="flex flex-col gap-8"
-                                >
-                                    <CurvePreview 
-                                        curve={activeSpaceCurve} 
-                                        interpMode={interpMode} 
-                                        textureData={atlasTexture}
-                                        sampleY={spaceLever}
-                                    />
-                                    
-                                    <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl">
-                                        <h3 className="font-medium text-sm border-b border-zinc-800 pb-3 mb-4 flex items-center gap-2">
-                                            <Download className="w-4 h-4 text-zinc-400" />
-                                            Export Asset
-                                        </h3>
-                                        <CurveExporter curve={deferredActiveSpaceCurve} interpMode={interpMode} />
-                                        
-                                        {normalizedCategoryCurves.length > 1 && (
-                                        <div className="pt-4 mt-6 border-t border-zinc-800 space-y-3">
-                                            <button 
-                                                onClick={handleExportLibraryLUT}
-                                                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 rounded-xl font-medium text-sm transition-colors border border-indigo-500/20 hover:border-indigo-500/40"
-                                            >
-                                                <Download className="w-4 h-4" />
-                                                Export 2D LUT Atlas
-                                            </button>
-                                            <p className="text-[10px] text-zinc-500 text-center leading-tight">
-                                                {exportWidth}x{exportHeight} texture &bull; Full Variant Space Interpolation<br/>
-                                                Provenance metadata encoded in PNG
-                                            </p>
-                                        </div>
-                                        )}
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
+                        <motion.div
+                            layout
+                            className="flex flex-col gap-8"
+                        >
+                            <CurvePreview
+                                curve={activeSpaceCurve}
+                                interpMode={interpMode}
+                                textureData={atlasTexture}
+                                sampleY={spaceLever}
+                            />
+
+                            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl">
+                                <h3 className="font-medium text-sm border-b border-zinc-800 pb-3 mb-4 flex items-center gap-2">
+                                    <Download className="w-4 h-4 text-zinc-400" />
+                                    Export Asset
+                                </h3>
+                                <CurveExporter curve={deferredActiveSpaceCurve} interpMode={interpMode} />
+
+                                {normalizedCategoryCurves.length > 1 && (
+                                <div className="pt-4 mt-6 border-t border-zinc-800 space-y-3">
+                                    <button
+                                        onClick={handleExportLibraryLUT}
+                                        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600/10 hover:bg-indigo-600/20 text-indigo-400 rounded-xl font-medium text-sm transition-colors border border-indigo-500/20 hover:border-indigo-500/40"
+                                    >
+                                        <Download className="w-4 h-4" />
+                                        Export 2D LUT Atlas
+                                    </button>
+                                    <p className="text-[10px] text-zinc-500 text-center leading-tight">
+                                        {exportWidth}x{exportHeight} texture &bull; Full Variant Space Interpolation<br/>
+                                        Provenance metadata encoded in PNG
+                                    </p>
+                                </div>
+                                )}
+                            </div>
+                        </motion.div>
                     </motion.div>
                 </div>
             )}
@@ -719,7 +773,7 @@ export default function App() {
           </div>
           
           {/* Right Rail Sidebar */}
-          <div className={cn("flex flex-col gap-6 sticky top-8 transition-opacity duration-300", isDrawingMode ? "opacity-30 hover:opacity-100" : "")}>
+          <div className="flex flex-col gap-6 sticky top-8 transition-opacity duration-300">
              <div className="bg-[#09090b] flex flex-col min-h-[500px]">
                  <div className="p-4 border-b border-zinc-800 flex items-center justify-between pb-6">
                      <h3 className="font-bold text-xs tracking-widest uppercase text-white">Point Editor</h3>

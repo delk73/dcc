@@ -209,11 +209,9 @@ export const CurvePreview: React.FC<CurvePreviewProps> = ({ curve, interpMode, t
                   height={1} 
                   className="w-full h-full object-fill absolute inset-0"
               />
-              <button className="absolute bottom-1 right-1 w-4 h-4 rounded-full border border-zinc-500 flex items-center justify-center text-zinc-400 text-[10px]">i</button>
           </div>
       </div>
 
     </div>
   );
 };
-

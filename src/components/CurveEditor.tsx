@@ -42,6 +42,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
   const activeCurveData = draggingPoint ? localCurve : curve;
 
   const handlePointerDown = (e: React.PointerEvent<SVGElement>, channel: Channel, pointIndex: number) => {
+    if (e.button !== 0) return;
     e.stopPropagation();
     setLocalCurve(curve);
     setDraggingPoint({ channel, index: pointIndex });
@@ -135,6 +136,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
     const channelData = [...activeCurveData[channel]];
     if (channelData.length <= 2 || isBoundaryPoint(channelData[index])) return;
     
+    setDraggingPoint(null);
     channelData.splice(index, 1);
     const newCurve = {
       ...activeCurveData,
@@ -268,6 +270,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
                     )}
                     onPointerDown={(e) => handlePointerDown(e, channel, i)}
                     onContextMenu={(e) => handlePointContextMenu(e, channel, i)}
+                    onDoubleClick={(e) => e.stopPropagation()}
                 >
                     <title>{canRemove ? 'Right-click to remove point' : 'Dependent boundary point'}</title>
                     <circle
