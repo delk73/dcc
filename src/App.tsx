@@ -469,7 +469,7 @@ export default function App() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                     <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
                         <h3 className="text-[10px] uppercase tracking-wider font-bold text-zinc-400 border-b border-zinc-800 pb-2">View Context <span className="font-normal normal-case text-zinc-600">(Affects which curves you see)</span></h3>
-                        <div className="flex bg-black border border-zinc-800 rounded-lg p-0.5">
+                        <div className="grid grid-cols-4 gap-1 bg-black border border-zinc-800 rounded-lg p-1">
                             {viewContextOptions.map(({ id, label, icon: Icon }) => (
                               <button
                                 key={id}
@@ -478,15 +478,14 @@ export default function App() {
                                 aria-label={label}
                                 aria-pressed={viewContext === id}
                                 className={cn(
-                                  "flex-1 min-w-0 py-1.5 text-[11px] font-medium rounded-md transition-colors",
-                                  "flex items-center justify-center gap-1.5",
+                                  "h-8 rounded-md transition-colors",
+                                  "flex items-center justify-center",
                                   viewContext === id
                                     ? "bg-zinc-800 text-white shadow-sm"
                                     : "text-zinc-500 hover:text-white"
                                 )}
                               >
-                                <Icon className="w-3.5 h-3.5 shrink-0" />
-                                <span className="truncate">{label}</span>
+                                <Icon className="w-4 h-4" aria-hidden="true" />
                               </button>
                             ))}
                         </div>
@@ -536,14 +535,6 @@ export default function App() {
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                             <h3 className="text-xs uppercase tracking-wider font-bold text-zinc-300">Space Continuum <span className="text-zinc-600 font-normal normal-case">(1D)</span></h3>
-                        </div>
-                        <div className="flex items-center gap-6 text-[11px] text-zinc-400">
-                            <div className="flex items-center gap-2">
-                                <div className="w-3 h-3 rounded-full bg-white shadow-sm" /> Authored Anchor
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <div className="w-3 h-3 rounded-full border border-zinc-500 bg-transparent" /> Interpolated Position
-                            </div>
                         </div>
                     </div>
                     
