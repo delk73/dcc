@@ -9,6 +9,8 @@ import {
   canToggleLock,
   convertPointToAuthored,
   createAuthoredInteriorPoint,
+  createStablePointId,
+  fromTimeKey,
   getOutgoingInterpolation,
   migrateKeyframesToCurvePoints,
   normalizeCurvePoints,
@@ -19,7 +21,8 @@ import {
   togglePointFlag,
   updatePointById,
   shouldPreserveDuringCompression,
-  clampPointMove
+  clampPointMove,
+  toTimeKey
 } from './curvePointPolicy';
 import { blendCurves, computeTangents, evaluateCurve } from './curveUtils';
 import { CurvePoint } from '../types';
@@ -70,11 +73,16 @@ const segmentPoints: CurvePoint[] = [
 assert.equal(getOutgoingInterpolation(segmentPoints[0]), 'constant');
 assert.equal(evaluateCurve(segmentPoints, computeTangents(segmentPoints), 0.5, 'linear'), 0);
 
-const nearlyRepeatedBlend = blendCurves(
+assert.equal(toTimeKey(0.5), toTimeKey(0.500000001));
+assert.equal(fromTimeKey(toTimeKey(0.5)), 0.5);
+assert.equal(toTimeKey(-1), 0);
+assert.equal(toTimeKey(2), 1_000_000);
+
+const exactMiddleBlend = blendCurves(
   {
     r: [
       { ...migrated[0], time: 0 },
-      { ...migrated[1], time: 0.5 },
+      { ...migrated[1], id: 'middle-a', time: 0.5 },
       { ...migrated[2], time: 1 }
     ],
     g: migrated,
@@ -84,7 +92,7 @@ const nearlyRepeatedBlend = blendCurves(
   {
     r: [
       { ...migrated[0], time: 0 },
-      { ...migrated[1], id: 'near-repeat', time: 0.500000001 },
+      { ...migrated[1], id: 'middle-b', time: 0.5 },
       { ...migrated[2], time: 1 }
     ],
     g: migrated,
@@ -94,7 +102,37 @@ const nearlyRepeatedBlend = blendCurves(
   0.5,
   'cubic'
 );
-assert.equal(nearlyRepeatedBlend.r.length, 3);
+const quantizedMiddleBlend = blendCurves(
+  {
+    r: [
+      { ...migrated[0], time: 0 },
+      { ...migrated[1], id: 'middle-a', time: 0.5 },
+      { ...migrated[2], time: 1 }
+    ],
+    g: migrated,
+    b: migrated,
+    a: migrated
+  },
+  {
+    r: [
+      { ...migrated[0], time: 0 },
+      { ...migrated[1], id: 'middle-b', time: 0.500000001 },
+      { ...migrated[2], time: 1 }
+    ],
+    g: migrated,
+    b: migrated,
+    a: migrated
+  },
+  0.5,
+  'cubic'
+);
+assert.equal(quantizedMiddleBlend.r.length, 3);
+assert.deepEqual(quantizedMiddleBlend.r.map(point => toTimeKey(point.time)), [0, 500000, 1000000]);
+assert.equal(exactMiddleBlend.r[1].id, quantizedMiddleBlend.r[1].id);
+assert.equal(
+  createStablePointId({ time: 0.5, value: 0.8 }, 1),
+  createStablePointId({ time: 0.500000001, value: 0.8 }, 1)
+);
 
 assert.deepEqual(
   clampPointMove({ ...migrated[1], constraints: { pinnedTime: true } }, { time: 0.75, value: 1.2 }),

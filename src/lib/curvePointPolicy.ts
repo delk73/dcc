@@ -11,15 +11,26 @@ export type SelectedPointRef = {
 };
 
 const CHANNELS = ['r', 'g', 'b', 'a'] as const;
+export const TIME_KEY_SCALE = 1_000_000;
 
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));
+
+export function toTimeKey(time: number): number {
+  if (!Number.isFinite(time)) return 0;
+  return Math.round(clamp(time, 0, 1) * TIME_KEY_SCALE);
+}
+
+export function fromTimeKey(key: number): number {
+  if (!Number.isFinite(key)) return 0;
+  return clamp(Math.round(key) / TIME_KEY_SCALE, 0, 1);
+}
 
 const stableNumberPart = (value: number) =>
   Number.isFinite(value) ? value.toFixed(6).replace(/^-/, 'n').replace(/\./g, '_') : 'invalid';
 
 export function createStablePointId(keyframe: types.Keyframe, index: number): string {
-  return `point_${index}_${stableNumberPart(keyframe.time)}_${stableNumberPart(keyframe.value)}`;
+  return `point_${index}_t${toTimeKey(keyframe.time)}_${stableNumberPart(keyframe.value)}`;
 }
 
 export function createAuthoredInteriorPoint(time: number, value: number, id: string = crypto.randomUUID()): types.CurvePoint {

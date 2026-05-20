@@ -1,26 +1,21 @@
 import { ColorCurve, CurvePoint } from '../types';
-import { createStablePointId, getOutgoingInterpolation } from './curvePointPolicy';
+import {
+  createStablePointId,
+  fromTimeKey,
+  getOutgoingInterpolation,
+  toTimeKey
+} from './curvePointPolicy';
 
 export type InterpMode = 'linear' | 'cubic' | 'constant';
 
-const TIME_MERGE_EPSILON = 0.00001;
-
-const mergeCurveTimes = (...curves: CurvePoint[][]): number[] => {
-  const sortedTimes = curves
-    .flatMap(curve => curve.map(point => point.time))
+const mergeCurveTimeKeys = (...curves: CurvePoint[][]): number[] =>
+  Array.from(new Set(
+    curves.flatMap(curve => curve.map(point => toTimeKey(point.time)))
+  ))
     .sort((a, b) => a - b);
 
-  return sortedTimes.reduce<number[]>((times, time) => {
-    const previous = times[times.length - 1];
-    if (previous === undefined || Math.abs(previous - time) > TIME_MERGE_EPSILON) {
-      times.push(time);
-    }
-    return times;
-  }, []);
-};
-
-const findPointAtTime = (points: CurvePoint[], time: number) =>
-  points.find(point => Math.abs(point.time - time) <= TIME_MERGE_EPSILON);
+const findPointAtTimeKey = (points: CurvePoint[], timeKey: number) =>
+  points.find(point => toTimeKey(point.time) === timeKey);
 
 export function computeTangents(data: CurvePoint[]): number[] {
   const n = data.length;
@@ -84,16 +79,17 @@ export function evaluateCurve(keyframes: CurvePoint[], tangents: number[], t: nu
 
 export function blendCurves(c1: ColorCurve, c2: ColorCurve, blendT: number, interpMode: InterpMode): ColorCurve {
   const blendChannel = (ch1: CurvePoint[], ch2: CurvePoint[]) => {
-    const times = mergeCurveTimes(ch1, ch2);
+    const timeKeys = mergeCurveTimeKeys(ch1, ch2);
     const t1 = computeTangents(ch1);
     const t2 = computeTangents(ch2);
     
-    return times.map((time, index) => {
+    return timeKeys.map((timeKey, index) => {
+      const time = fromTimeKey(timeKey);
       const val1 = evaluateCurve(ch1, t1, time, interpMode);
       const val2 = evaluateCurve(ch2, t2, time, interpMode);
-      const sourcePoint = findPointAtTime(ch1, time) ?? findPointAtTime(ch2, time);
+      const sourcePoint = findPointAtTimeKey(ch1, timeKey) ?? findPointAtTimeKey(ch2, timeKey);
       const isFirst = index === 0;
-      const isLast = index === times.length - 1;
+      const isLast = index === timeKeys.length - 1;
       const value = val1 + (val2 - val1) * blendT;
       const role: CurvePoint['role'] = isFirst || isLast
         ? 'boundary'
