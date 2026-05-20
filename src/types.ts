@@ -21,3 +21,5 @@ export type LibraryCurve = {
   authored?: boolean;
   source?: 'implicit-edit' | 'manual' | 'loaded';
 };
+
+export type SpaceAnchor = LibraryCurve;

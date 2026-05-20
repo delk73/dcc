@@ -3,67 +3,28 @@ import { get, set } from 'idb-keyval';
 import { ColorCurve, Channel, LibraryCurve } from './types';
 import { CurveEditor } from './components/CurveEditor';
 import { CurvePreview } from './components/CurvePreview';
-import { Library, Plus, Trash2, FolderOpen, Layers, Settings2, Download, Edit2, Copy } from 'lucide-react';
+import { Plus, Layers, Settings2 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion } from 'motion/react';
 import { InterpMode, computeTangents, evaluateCurve, blendSpaceCurves } from './lib/curveUtils';
+import {
+  POSITION_EPSILON,
+  clampSpacePosition,
+  cloneCurve,
+  evaluateSpaceAt,
+  normalizeAnchors,
+  snapToAnchorIfClose,
+  sortAnchors
+} from './lib/spaceUtils';
 import { insertTextChunk } from './lib/pngUtils';
 
-const ATLAS_FORMATS = [
-  { label: '128x8 (Tiny)', width: 128, height: 8 },
-  { label: '256x16 (Lite)', width: 256, height: 16 },
-  { label: '256x32 (Standard)', width: 256, height: 32 },
-  { label: '256x64 (Detailed)', width: 256, height: 64 },
-  { label: '512x64 (High Res)', width: 512, height: 64 },
-  { label: '256x256 (Square Vol)', width: 256, height: 256 }
-];
+const EXPORT_ATLAS_SIZE = { width: 256, height: 32 };
 
 const initialCurve: ColorCurve = {
   r: [{ time: 0, value: 0 }, { time: 1, value: 1 }],
   g: [{ time: 0, value: 0 }, { time: 1, value: 1 }],
   b: [{ time: 0, value: 0 }, { time: 1, value: 1 }],
   a: [{ time: 0, value: 1 }, { time: 1, value: 1 }]
-};
-
-const POSITION_EPSILON = 0.001;
-const SNAP_EPSILON = 0.01;
-
-const clampSpacePosition = (position: number) => Math.max(0, Math.min(1, position));
-
-const cloneCurve = (curve: ColorCurve): ColorCurve => ({
-  r: curve.r.map((point) => ({ ...point })),
-  g: curve.g.map((point) => ({ ...point })),
-  b: curve.b.map((point) => ({ ...point })),
-  a: curve.a.map((point) => ({ ...point }))
-});
-
-const sortAnchors = (anchors: LibraryCurve[]) =>
-  [...anchors].sort((a, b) => (a.position || 0) - (b.position || 0));
-
-const normalizeAnchors = (anchors: LibraryCurve[]) => {
-  const sorted = sortAnchors(anchors);
-  return sorted.map((curve, index) => ({
-    ...curve,
-    position: curve.position ?? (sorted.length > 1 ? index / (sorted.length - 1) : 0),
-    authored: curve.authored ?? true
-  }));
-};
-
-const snapToAnchorIfClose = (position: number, anchors: LibraryCurve[]) => {
-  const clamped = clampSpacePosition(position);
-  const nearestAnchor = anchors.reduce<LibraryCurve | null>((nearest, anchor) => {
-    if (!nearest) return anchor;
-    return Math.abs(anchor.position - clamped) < Math.abs(nearest.position - clamped) ? anchor : nearest;
-  }, null);
-
-  return nearestAnchor && Math.abs(nearestAnchor.position - clamped) <= SNAP_EPSILON
-    ? nearestAnchor.position
-    : clamped;
-};
-
-const evaluateSpaceAt = (position: number, anchors: LibraryCurve[], interpMode: InterpMode): ColorCurve => {
-  if (anchors.length === 0) return cloneCurve(initialCurve);
-  return cloneCurve(blendSpaceCurves(anchors, clampSpacePosition(position), interpMode));
 };
 
 import { AtlasViewer } from './components/AtlasViewer';
@@ -75,39 +36,20 @@ export default function App() {
   const anchorsRef = useRef<LibraryCurve[]>([]);
   const [draggingAnchorId, setDraggingAnchorId] = useState<string | null>(null);
   
-  const [curveState, setCurveState] = useState({ lever: 0, wrap: false, blend: 0.1 });
-  const [state2d, setState2d] = useState({ lever: 0, wrap: false, blend: 0.1 });
-  const [state3d, setState3d] = useState({ lever: 0, wrap: false, blend: 0.1 });
+  const [curveState, setCurveState] = useState({ lever: 0 });
+  const [state2d, setState2d] = useState({ lever: 0 });
+  const [state3d, setState3d] = useState({ lever: 0 });
   
-  const [atlasFormatIndex, setAtlasFormatIndex] = useState<number>(2);
-  const currentFormat = ATLAS_FORMATS[atlasFormatIndex];
-  const exportWidth = currentFormat.width;
-  const exportHeight = currentFormat.height;
-  
-  const [batchCount, setBatchCount] = useState(5);
-
   const [atlasTexture, setAtlasTexture] = useState<ImageData | null>(null);
 
   const activeControlState = mainView === 'curve' ? curveState : (mainView === '2d' ? state2d : state3d);
   const spaceLever = activeControlState.lever;
-  const wrapSpace = activeControlState.wrap;
-  const loopBlend = activeControlState.blend;
 
   const setRawSpacePosition = (val: number) => {
       const nextPosition = clampSpacePosition(val);
       if (mainView === 'curve') setCurveState(prev => ({...prev, lever: nextPosition}));
       else if (mainView === '2d') setState2d(prev => ({...prev, lever: nextPosition}));
       else setState3d(prev => ({...prev, lever: nextPosition}));
-  };
-  const setWrapSpace = (val: boolean) => {
-      if (mainView === 'curve') setCurveState(prev => ({...prev, wrap: val}));
-      else if (mainView === '2d') setState2d(prev => ({...prev, wrap: val}));
-      else setState3d(prev => ({...prev, wrap: val}));
-  };
-  const setLoopBlend = (val: number) => {
-      if (mainView === 'curve') setCurveState(prev => ({...prev, blend: val}));
-      else if (mainView === '2d') setState2d(prev => ({...prev, blend: val}));
-      else setState3d(prev => ({...prev, blend: val}));
   };
 
   const [activeChannel, setActiveChannel] = useState<Channel>('r');
@@ -141,8 +83,6 @@ export default function App() {
             
             if (uxState.interpMode) setInterpMode(uxState.interpMode);
             if (uxState.mainView) setMainView(uxState.mainView);
-            if (uxState.batchCount !== undefined) setBatchCount(uxState.batchCount);
-            if (uxState.atlasFormatIndex !== undefined) setAtlasFormatIndex(uxState.atlasFormatIndex);
             if (uxState.activeChannel) setActiveChannel(uxState.activeChannel);
           }
         } else {
@@ -169,12 +109,10 @@ export default function App() {
     const uxState = {
        interpMode,
        mainView,
-       batchCount,
-       atlasFormatIndex,
        activeChannel
     };
     set('curve-ux-state', uxState).catch(console.error);
-  }, [interpMode, mainView, batchCount, atlasFormatIndex, activeChannel]);
+  }, [interpMode, mainView, activeChannel]);
 
   const activeCategoryCurves = useMemo(() => {
     return [...library].sort((a,b) => (a.position||0) - (b.position||0));
@@ -238,17 +176,7 @@ export default function App() {
     setDraggingAnchorId(null);
   };
 
-  const spaceCurves = useMemo(() => {
-      return wrapSpace && normalizedCategoryCurves.length > 0 
-        ? [
-            ...normalizedCategoryCurves.map((c) => ({
-              ...c, 
-              position: c.position * (1 - loopBlend)
-            })),
-            { ...normalizedCategoryCurves[0], position: 1.0, id: 'wrap-dummy' }
-          ]
-        : normalizedCategoryCurves;
-  }, [wrapSpace, normalizedCategoryCurves, loopBlend]);
+  const spaceCurves = normalizedCategoryCurves;
 
   const activeSpaceCurve = spaceCurves.length > 0 
     ? blendSpaceCurves(spaceCurves, spaceLever, interpMode)
@@ -271,7 +199,7 @@ export default function App() {
         ));
       }
 
-      const derivedCurve = evaluateSpaceAt(editPosition, anchors, interpMode);
+      const derivedCurve = evaluateSpaceAt(editPosition, anchors, interpMode, initialCurve);
       const newEntry: LibraryCurve = {
         id: crypto.randomUUID(),
         name: `Anchor ${anchors.length + 1}`,
@@ -284,34 +212,6 @@ export default function App() {
 
       return sortAnchors([...prev, newEntry]);
     });
-  };
-
-  const handleCloneActiveCurve = () => {
-    setLibrary(prev => {
-        const newEntry: LibraryCurve = {
-          id: crypto.randomUUID(),
-          name: `Anchor ${prev.length + 1}`,
-          category: 'default',
-          position: Math.min(1, spaceLever + 0.05), // Jitter slightly so it sports right after the current space lever
-          curve: cloneCurve(activeSpaceCurve),
-          authored: true,
-          source: 'manual'
-        };
-        const categoryCurves = [...prev, newEntry];
-        categoryCurves.sort((a, b) => (a.position || 0) - (b.position || 0));
-
-        setRawSpacePosition(newEntry.position);
-        return categoryCurves;
-    });
-  };
-
-  const [renameVariantState, setRenameVariantState] = useState<{id: string, new: string} | null>(null);
-
-  const handleRenameVariantSubmit = () => {
-    if (renameVariantState && renameVariantState.new.trim() !== '') {
-        setLibrary(prev => prev.map(c => c.id === renameVariantState.id ? { ...c, name: renameVariantState.new } : c));
-    }
-    setRenameVariantState(null);
   };
 
   const categoryGradient = useMemo(() => {
@@ -340,24 +240,11 @@ export default function App() {
     return `linear-gradient(to right, ${stops.join(', ')})`;
   }, [normalizedCategoryCurves, interpMode]);
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setLibrary(prev => {
-        const targetCurve = prev.find(c => c.id === id);
-        if (!targetCurve) return prev;
-
-        const categoryCurves = prev.filter(c => c.id !== id);
-        categoryCurves.sort((a, b) => (a.position || 0) - (b.position || 0));
-        
-        return categoryCurves.length > 0 ? categoryCurves : [{ id: crypto.randomUUID(), name: 'Default Sweep', category: 'default', position: 0, curve: initialCurve }];
-    });
-  };
-
   const handleExportLibraryLUT = () => {
     if (normalizedCategoryCurves.length === 0) return;
     
-    const width = exportWidth;
-    const height = exportHeight; 
+    const width = EXPORT_ATLAS_SIZE.width;
+    const height = EXPORT_ATLAS_SIZE.height;
 
     const canvas = document.createElement('canvas');
     canvas.width = width;
@@ -376,7 +263,7 @@ export default function App() {
         const data = imageData.data;
 
         for (let y = 0; y < height; y++) {
-            const tSpace = y / (height - 1);
+            const tSpace = 1.0 - (y / (height - 1));
             const curveObj = blendSpaceCurves(spaceCurves, tSpace, interpMode);
             
             const sortedCurve = {
@@ -425,7 +312,7 @@ export default function App() {
     a.href = finalUrl;
     a.download = `SpaceAtlas_export.png`;
     a.click();
-    URL.revokeObjectURL(finalUrl);
+    window.setTimeout(() => URL.revokeObjectURL(finalUrl), 0);
   };
 
   const channelInfo = [

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { LibraryCurve } from '../types';
 import { InterpMode, computeTangents, evaluateCurve } from '../lib/curveUtils';
 import { Download } from 'lucide-react';
@@ -15,26 +15,8 @@ interface AtlasViewerProps {
 
 export const AtlasViewer: React.FC<AtlasViewerProps> = ({ curves, interpMode, spaceLever, setSpaceLever, onTextureUpdate, onExportAtlas, canExportAtlas = true }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [mergedAtlas, setMergedAtlas] = useState<string | null>(() => {
-      try { return localStorage.getItem('drawing-merged-atlas') || null; } catch { return null; }
-  });
-
-  const [mergedAtlasImageData, setMergedAtlasImageData] = useState<ImageData | null>(null);
-
-  // Parse mergedAtlas only when it changes
-  useEffect(() => {
-     if (mergedAtlas) {
-         const binaryString = atob(mergedAtlas);
-         const bytes = new Uint8ClampedArray(binaryString.length);
-         for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
-         setMergedAtlasImageData(new ImageData(bytes, 256, 256));
-     } else {
-         setMergedAtlasImageData(null);
-     }
-  }, [mergedAtlas]);
 
   const deferredCurves = React.useDeferredValue(curves);
-  const deferredMergedAtlas = React.useDeferredValue(mergedAtlasImageData);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -45,12 +27,6 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({ curves, interpMode, sp
     const width = 256;
     const height = 256;
     
-    if (deferredMergedAtlas) {
-        ctx.putImageData(deferredMergedAtlas, 0, 0);
-        setTimeout(() => onTextureUpdate?.(deferredMergedAtlas), 0);
-        return;
-    }
-
     // Pre-process all curves to avoid sorting and computing tangents in the inner loop
     const processedCurves = deferredCurves.map(c => {
         const sortedCurve = {
@@ -129,7 +105,7 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({ curves, interpMode, sp
     
     ctx.putImageData(imageData, 0, 0);
     setTimeout(() => onTextureUpdate?.(imageData), 0);
-  }, [deferredCurves, interpMode, deferredMergedAtlas]);
+  }, [deferredCurves, interpMode, onTextureUpdate]);
 
   const handlePointer = (e: React.MouseEvent | React.TouchEvent | React.PointerEvent) => {
       const rect = e.currentTarget.getBoundingClientRect();
@@ -137,11 +113,6 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({ curves, interpMode, sp
       const y = clientY - rect.top;
       const t = Math.max(0, Math.min(1, 1.0 - (y / rect.height)));
       setSpaceLever(t);
-  };
-
-  const handleClearBakedAtlas = () => {
-       localStorage.removeItem('drawing-merged-atlas');
-       setMergedAtlas(null);
   };
 
   return (
@@ -211,18 +182,6 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({ curves, interpMode, sp
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-medium">Atlas Editor</h2>
-            
-            <div className="flex items-center gap-4">
-                {mergedAtlas && (
-                    <button 
-                        onClick={handleClearBakedAtlas}
-                        className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/10 transition-all shadow-[0_0_12px_rgba(16,185,129,0.1)]"
-                        title="Revert to procedural curves"
-                    >
-                        Revert to Curves
-                    </button>
-                )}
-            </div>
           </div>
 
           <div className="flex items-center gap-4 bg-black border border-zinc-800 rounded-xl px-4 py-3 shadow-inner">

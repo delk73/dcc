@@ -1,4 +1,4 @@
-import { Keyframe } from '../types';
+import { ColorCurve, Keyframe } from '../types';
 
 export type InterpMode = 'linear' | 'cubic' | 'constant';
 
@@ -58,8 +58,6 @@ export function evaluateCurve(keyframes: Keyframe[], tangents: number[], t: numb
   }
   return 0;
 }
-
-import { ColorCurve } from '../types';
 
 export function blendCurves(c1: ColorCurve, c2: ColorCurve, blendT: number, interpMode: InterpMode): ColorCurve {
   const getTimes = (arr: Keyframe[]) => arr.map(k => k.time);
