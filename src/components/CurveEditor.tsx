@@ -1,16 +1,17 @@
 import React, { useRef, useState, useMemo, useEffect } from 'react';
 import { ColorCurve, Channel, Keyframe } from '../types';
 import { cn } from '../lib/utils';
-import { computeTangents, InterpMode } from '../lib/curveUtils';
+import { computeTangents, evaluateCurve, InterpMode } from '../lib/curveUtils';
 
-export type ViewContextMode = 'show-all' | 'focus-filtered' | 'ghost-inactive' | 'hide-inactive';
+export type ChannelMask = Record<Channel, boolean>;
 
 interface CurveEditorProps {
   curve: ColorCurve;
   onChange: (curve: ColorCurve) => void;
   activeChannel: Channel;
+  editChannels: ChannelMask;
+  onActiveChannelChange: (channel: Channel) => void;
   interpMode: InterpMode;
-  viewContext: ViewContextMode;
 }
 
 const WIDTH = 1000;
@@ -35,6 +36,7 @@ const CHANNEL_COLORS = {
 };
 
 const POINT_EPSILON = 0.00001;
+const CHANNELS: Channel[] = ['r', 'g', 'b', 'a'];
 const isBoundaryIndex = (data: Keyframe[], index: number) => index === 0 || index === data.length - 1;
 const orderChannelData = (data: Keyframe[]) => {
   if (data.length <= 2) return data;
@@ -44,33 +46,67 @@ const orderChannelData = (data: Keyframe[]) => {
   return [start, ...interior, end];
 };
 
-export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activeChannel, interpMode, viewContext }) => {
+export const CurveEditor: React.FC<CurveEditorProps> = ({
+  curve,
+  onChange,
+  activeChannel,
+  editChannels,
+  onActiveChannelChange,
+  interpMode
+}) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [draggingPoint, setDraggingPoint] = useState<{ channel: Channel, index: number } | null>(null);
   const [localCurve, setLocalCurve] = useState<ColorCurve>(curve);
   const lastUpdateRef = useRef<number>(0);
 
   const activeCurveData = draggingPoint ? localCurve : curve;
+  const editableChannels = CHANNELS.filter(channel => editChannels[channel]);
 
   const handlePointerDown = (e: React.PointerEvent<SVGElement>, channel: Channel, pointIndex: number) => {
     if (e.button !== 0) return;
+    if (!editChannels[channel]) return;
     e.stopPropagation();
+    onActiveChannelChange(channel);
     setLocalCurve(curve);
     setDraggingPoint({ channel, index: pointIndex });
     (e.target as Element).setPointerCapture(e.pointerId);
   };
 
+  const getSvgPoint = (clientX: number, clientY: number) => {
+    if (!svgRef.current) return null;
+    const ctm = svgRef.current.getScreenCTM();
+    if (!ctm) return null;
+
+    return {
+      x: (clientX - ctm.e) / ctm.a,
+      y: (clientY - ctm.f) / ctm.d
+    };
+  };
+
+  const detectEditableChannel = (time: number, value: number) => {
+    if (editableChannels.length === 0) return null;
+    if (editableChannels.length === 1) return editableChannels[0];
+
+    return editableChannels.reduce((nearest, channel) => {
+      const sortedData = [...activeCurveData[channel]].sort((a, b) => a.time - b.time);
+      const tangents = computeTangents(sortedData);
+      const channelValue = evaluateCurve(sortedData, tangents, time, interpMode);
+      const distance = Math.abs(channelValue - value);
+
+      return !nearest || distance < nearest.distance
+        ? { channel, distance }
+        : nearest;
+    }, null as { channel: Channel; distance: number } | null)?.channel ?? editableChannels[0];
+  };
+
   const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!draggingPoint || !svgRef.current) return;
 
-    const ctm = svgRef.current.getScreenCTM();
-    if (!ctm) return;
+    const point = getSvgPoint(e.clientX, e.clientY);
+    if (!point) return;
 
-    const x = (e.clientX - ctm.e) / ctm.a;
-    const y = (e.clientY - ctm.f) / ctm.d;
-
-    let newTime = X_TO_TIME(x);
-    const newValue = Y_TO_VALUE(y);
+    let newTime = X_TO_TIME(point.x);
+    const newValue = Y_TO_VALUE(point.y);
 
     const channelData = [...localCurve[draggingPoint.channel]];
     const index = draggingPoint.index;
@@ -120,16 +156,16 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
   };
 
   const handleSvgDoubleClick = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (!svgRef.current) return;
-    const ctm = svgRef.current.getScreenCTM();
-    if (!ctm) return;
+    const point = getSvgPoint(e.clientX, e.clientY);
+    if (!point) return;
 
-    const x = (e.clientX - ctm.e) / ctm.a;
-    const y = (e.clientY - ctm.f) / ctm.d;
+    let newTime = X_TO_TIME(point.x);
+    const newValue = Y_TO_VALUE(point.y);
+    const targetChannel = detectEditableChannel(newTime, newValue);
+    if (!targetChannel) return;
 
-    let newTime = X_TO_TIME(x);
-    const newValue = Y_TO_VALUE(y);
-    const currentChannelData = activeCurveData[activeChannel];
+    onActiveChannelChange(targetChannel);
+    const currentChannelData = activeCurveData[targetChannel];
 
     if (currentChannelData.length >= 2) {
       const minTime = currentChannelData[0].time + POINT_EPSILON;
@@ -148,7 +184,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
       : orderChannelData([...currentChannelData, { time: newTime, value: newValue }]);
     const newCurve = {
       ...activeCurveData,
-      [activeChannel]: channelData
+      [targetChannel]: channelData
     };
     
     setLocalCurve(newCurve);
@@ -160,6 +196,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
     e.stopPropagation();
     
     const channelData = [...activeCurveData[channel]];
+    if (!editChannels[channel]) return;
     if (channelData.length <= 2 || isBoundaryIndex(channelData, index)) return;
     
     setDraggingPoint(null);
@@ -270,18 +307,10 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
     
     const isActive = activeChannel === channel;
     const isDraggingThis = draggingPoint?.channel === channel;
-    const isVisible = isActive || viewContext !== 'hide-inactive';
-    const showPoints = isActive || viewContext === 'show-all';
-    const strokeOpacity = isActive
-      ? 1
-      : viewContext === 'show-all'
-        ? 0.7
-        : viewContext === 'focus-filtered'
-          ? 0.12
-          : 0.25;
-    const strokeWidth = isActive ? 3 : viewContext === 'show-all' ? 1.75 : 1.25;
-
-    if (!isVisible) return null;
+    const isEditable = editChannels[channel];
+    const showPoints = isEditable;
+    const strokeOpacity = isEditable ? 1 : 0.3;
+    const strokeWidth = isActive ? 3 : isEditable ? 2 : 1.25;
 
     const startBoundary = data[0];
     const endBoundary = data[data.length - 1];
@@ -319,7 +348,6 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
             stroke={CHANNEL_COLORS[channel]}
             strokeWidth={strokeWidth}
             opacity={strokeOpacity}
-            strokeDasharray={!isActive && viewContext === 'ghost-inactive' ? '6 8' : undefined}
             style={{ pointerEvents: 'none' }}
         />
         {showPoints && data.map((k, i) => {
@@ -333,7 +361,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
                     key={`${channel}-${i}`}
                     className={cn(
                       "outline-none",
-                      canRemove ? "cursor-pointer" : "cursor-grab"
+                      editChannels[channel] && (canRemove ? "cursor-pointer" : "cursor-grab")
                     )}
                     onPointerDown={(e) => handlePointerDown(e, channel, i)}
                     onContextMenu={(e) => handlePointContextMenu(e, channel, i)}
@@ -390,7 +418,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({ curve, onChange, activ
         onDoubleClick={handleSvgDoubleClick}
       >
         {drawGrid()}
-        {['r', 'g', 'b', 'a'].map(ch => drawCurve(ch as Channel))}
+        {CHANNELS.map(ch => drawCurve(ch))}
       </svg>
       <div className="absolute top-4 right-4 text-xs text-zinc-500 font-mono pointer-events-none drop-shadow-md">
         Double-click to add point &bull; Right-click point to remove 

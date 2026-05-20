@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { get, set } from 'idb-keyval';
 import { ColorCurve, Channel, LibraryCurve } from './types';
-import { CurveEditor, ViewContextMode } from './components/CurveEditor';
+import { ChannelMask, CurveEditor } from './components/CurveEditor';
 import { CurvePreview } from './components/CurvePreview';
-import { Crosshair, Eye, EyeOff, Layers, Layers2, Plus, RotateCcw, Settings2 } from 'lucide-react';
+import { Layers, Plus, RotateCcw, Settings2 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion } from 'motion/react';
 import { InterpMode, computeTangents, evaluateCurve, blendSpaceCurves } from './lib/curveUtils';
@@ -19,8 +19,13 @@ import {
 import { insertTextChunk } from './lib/pngUtils';
 
 const EXPORT_ATLAS_SIZE = { width: 256, height: 32 };
-const UI_TIMING = {
-  tooltipDelayMs: 180
+
+const ALL_CHANNELS: Channel[] = ['r', 'g', 'b', 'a'];
+const ALL_CHANNELS_ENABLED: ChannelMask = {
+  r: true,
+  g: true,
+  b: true,
+  a: true
 };
 
 const initialCurve: ColorCurve = {
@@ -66,10 +71,8 @@ export default function App() {
   };
 
   const [activeChannel, setActiveChannel] = useState<Channel>('r');
+  const [editChannels, setEditChannels] = useState<ChannelMask>(ALL_CHANNELS_ENABLED);
   const [interpMode, setInterpMode] = useState<InterpMode>('cubic');
-  const [viewContext, setViewContext] = useState<ViewContextMode>('show-all');
-  const [viewContextTooltip, setViewContextTooltip] = useState<ViewContextMode | null>(null);
-  const viewContextTooltipTimerRef = useRef<number | null>(null);
 
   // Load from local storage / indexedDB
   useEffect(() => {
@@ -100,7 +103,7 @@ export default function App() {
             if (uxState.interpMode) setInterpMode(uxState.interpMode);
             if (uxState.mainView) setMainView(uxState.mainView);
             if (uxState.activeChannel) setActiveChannel(uxState.activeChannel);
-            if (uxState.viewContext) setViewContext(uxState.viewContext);
+            if (uxState.editChannels) setEditChannels({ ...ALL_CHANNELS_ENABLED, ...uxState.editChannels });
           }
         } else {
           setLibrary(createMinimalBasicSpace());
@@ -125,38 +128,10 @@ export default function App() {
        interpMode,
        mainView,
        activeChannel,
-       viewContext
+       editChannels
     };
     set('curve-ux-state', uxState).catch(console.error);
-  }, [interpMode, mainView, activeChannel, viewContext]);
-
-  useEffect(() => {
-    return () => {
-      if (viewContextTooltipTimerRef.current !== null) {
-        window.clearTimeout(viewContextTooltipTimerRef.current);
-      }
-    };
-  }, []);
-
-  const clearViewContextTooltipTimer = () => {
-    if (viewContextTooltipTimerRef.current !== null) {
-      window.clearTimeout(viewContextTooltipTimerRef.current);
-      viewContextTooltipTimerRef.current = null;
-    }
-  };
-
-  const showViewContextTooltip = (id: ViewContextMode) => {
-    clearViewContextTooltipTimer();
-    viewContextTooltipTimerRef.current = window.setTimeout(() => {
-      setViewContextTooltip(id);
-      viewContextTooltipTimerRef.current = null;
-    }, UI_TIMING.tooltipDelayMs);
-  };
-
-  const hideViewContextTooltip = () => {
-    clearViewContextTooltipTimer();
-    setViewContextTooltip(null);
-  };
+  }, [interpMode, mainView, activeChannel, editChannels]);
 
   const activeCategoryCurves = useMemo(() => {
     return [...library].sort((a,b) => (a.position||0) - (b.position||0));
@@ -264,6 +239,8 @@ export default function App() {
     setCurveState({ lever: 0 });
     setState2d({ lever: 0 });
     setState3d({ lever: 0 });
+    setEditChannels(ALL_CHANNELS_ENABLED);
+    setActiveChannel('r');
     setDraggingAnchorId(null);
   };
 
@@ -373,14 +350,26 @@ export default function App() {
     { id: 'g', label: 'Green', color: 'bg-green-500' },
     { id: 'b', label: 'Blue', color: 'bg-blue-500' },
     { id: 'a', label: 'Alpha', color: 'bg-stone-400' },
-  ];
+  ] satisfies { id: Channel; label: string; color: string }[];
 
-  const viewContextOptions = [
-    { id: 'show-all', label: 'Show All', icon: Eye },
-    { id: 'focus-filtered', label: 'Focus Filtered', icon: Crosshair },
-    { id: 'ghost-inactive', label: 'Ghost Inactive', icon: Layers2 },
-    { id: 'hide-inactive', label: 'Hide Inactive', icon: EyeOff },
-  ] satisfies { id: ViewContextMode; label: string; icon: React.ComponentType<{ className?: string }> }[];
+  const enabledEditChannels = channelInfo.filter(ci => editChannels[ci.id]);
+  const editFilterLabel = enabledEditChannels.length === channelInfo.length
+    ? 'All channels enabled. Edits infer the nearest channel when needed.'
+    : enabledEditChannels.length > 0
+      ? `Editing ${enabledEditChannels.map(ci => ci.label.charAt(0)).join(', ')}. Disabled channels remain protected.`
+      : 'No channels enabled. Turn on a channel to edit.';
+
+  const toggleEditChannel = (channel: Channel) => {
+    const next = { ...editChannels, [channel]: !editChannels[channel] };
+    setEditChannels(next);
+
+    if (!next[activeChannel]) {
+      const nextActive = ALL_CHANNELS.find(ch => next[ch]);
+      if (nextActive) setActiveChannel(nextActive);
+    } else if (next[channel]) {
+      setActiveChannel(channel);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-black text-zinc-100 font-sans selection:bg-indigo-500/30">
@@ -495,64 +484,32 @@ export default function App() {
                      </div>
                  </div>
 
-                 <CurveEditor curve={activeSpaceCurve} onChange={updateActiveCurve} activeChannel={activeChannel} interpMode={interpMode} viewContext={viewContext} />
+                 <CurveEditor
+                    curve={activeSpaceCurve}
+                    onChange={updateActiveCurve}
+                    activeChannel={activeChannel}
+                    editChannels={editChannels}
+                    onActiveChannelChange={setActiveChannel}
+                    interpMode={interpMode}
+                 />
               </div>
                 
-                {/* 3 Panels: View Context, Edit Filter, Diagnostics */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
-                        <h3 className="text-[10px] uppercase tracking-wider font-bold text-zinc-400 border-b border-zinc-800 pb-2">View Context <span className="font-normal normal-case text-zinc-600">(Affects which curves you see)</span></h3>
-                        <div className="grid grid-cols-4 gap-1 bg-black border border-zinc-800 rounded-lg p-1">
-                            {viewContextOptions.map(({ id, label, icon: Icon }) => (
-                              <button
-                                key={id}
-                                onClick={() => setViewContext(id)}
-                                aria-label={label}
-                                aria-pressed={viewContext === id}
-                                onFocus={() => showViewContextTooltip(id)}
-                                onBlur={hideViewContextTooltip}
-                                onPointerEnter={() => showViewContextTooltip(id)}
-                                onPointerLeave={hideViewContextTooltip}
-                                className={cn(
-                                  "relative h-8 rounded-md transition-colors",
-                                  "flex items-center justify-center",
-                                  viewContext === id
-                                    ? "bg-zinc-800 text-white shadow-sm"
-                                    : "text-zinc-500 hover:text-white"
-                                )}
-                              >
-                                <Icon className="w-4 h-4" aria-hidden="true" />
-                                {viewContextTooltip === id && (
-                                  <span
-                                    role="tooltip"
-                                    className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 -translate-x-1/2 whitespace-nowrap rounded border border-zinc-700 bg-zinc-950 px-2 py-1 text-[10px] font-medium text-zinc-200 shadow-lg"
-                                  >
-                                    {label}
-                                  </span>
-                                )}
-                              </button>
-                            ))}
-                        </div>
-                        <p className="text-[10px] text-zinc-500 pt-1">
-                            {viewContext === 'show-all' && 'All channels visible with editable points.'}
-                            {viewContext === 'focus-filtered' && 'Filtered channel emphasized; inactive channels stay as faint context.'}
-                            {viewContext === 'ghost-inactive' && 'Inactive channels are ghosted behind the filtered channel.'}
-                            {viewContext === 'hide-inactive' && 'Only the filtered channel is visible.'}
-                        </p>
-                    </div>
-
+                {/* Editor Panels */}
+                <div className="grid grid-cols-1 gap-4">
                     <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
                         <h3 className="text-[10px] uppercase tracking-wider font-bold text-zinc-400 border-b border-zinc-800 pb-2">Edit Filter <span className="font-normal normal-case text-zinc-600">(Affects which channels you edit)</span></h3>
                         <div className="flex gap-2">
                              {channelInfo.map((ci) => (
                                 <button
                                     key={ci.id}
-                                    onClick={() => setActiveChannel(ci.id as Channel)}
+                                    onClick={() => toggleEditChannel(ci.id)}
+                                    aria-pressed={editChannels[ci.id]}
                                     className={cn(
                                     "flex-1 py-1.5 rounded-lg text-xs font-medium transition-all border flex items-center justify-center gap-2",
-                                    activeChannel === ci.id 
+                                    editChannels[ci.id]
                                         ? `bg-zinc-800 border-zinc-700 text-white shadow-sm` 
-                                        : "bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:bg-white/5"
+                                        : "bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:bg-white/5",
+                                    activeChannel === ci.id && editChannels[ci.id] && "ring-1 ring-white/30"
                                     )}
                                 >
                                     <span className={cn("w-2 h-2 rounded-full", ci.color)} />
@@ -560,17 +517,7 @@ export default function App() {
                                 </button>
                              ))}
                         </div>
-                        <p className="text-[10px] text-zinc-500 pt-1">All channels enabled. Filter limits available targets.</p>
-                    </div>
-
-                    <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
-                        <h3 className="text-[10px] uppercase tracking-wider font-bold text-zinc-400 border-b border-zinc-800 pb-2">Diagnostics <span className="font-normal normal-case text-zinc-600">(Preview overlay modes)</span></h3>
-                        <div className="flex bg-black border border-zinc-800 rounded-lg p-0.5">
-                            <button className="flex-1 py-1.5 text-[11px] font-medium text-zinc-500 hover:text-white transition-colors">Heat</button>
-                            <button className="flex-1 py-1.5 text-[11px] font-medium text-zinc-500 hover:text-white transition-colors">Vector</button>
-                            <button className="flex-1 py-1.5 text-[11px] font-medium text-zinc-500 hover:text-white transition-colors">Luma</button>
-                        </div>
-                        <p className="text-[10px] text-zinc-500 pt-1">Diagnostics replace the preview output.</p>
+                        <p className="text-[10px] text-zinc-500 pt-1">{editFilterLabel}</p>
                     </div>
                 </div>
 
