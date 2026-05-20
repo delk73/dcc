@@ -3,7 +3,7 @@ import { get, set } from 'idb-keyval';
 import { ColorCurve, Channel, LibraryCurve } from './types';
 import { CurveEditor } from './components/CurveEditor';
 import { CurvePreview } from './components/CurvePreview';
-import { Plus, Layers, Settings2 } from 'lucide-react';
+import { Plus, Layers, RotateCcw, Settings2 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { motion } from 'motion/react';
 import { InterpMode, computeTangents, evaluateCurve, blendSpaceCurves } from './lib/curveUtils';
@@ -26,6 +26,16 @@ const initialCurve: ColorCurve = {
   b: [{ time: 0, value: 0 }, { time: 1, value: 1 }],
   a: [{ time: 0, value: 1 }, { time: 1, value: 1 }]
 };
+
+const createMinimalBasicSpace = (): LibraryCurve[] => [{
+  id: crypto.randomUUID(),
+  name: 'Default Sweep',
+  category: 'Basic',
+  position: 0,
+  curve: cloneCurve(initialCurve),
+  authored: true,
+  source: 'manual'
+}];
 
 import { AtlasViewer } from './components/AtlasViewer';
 
@@ -86,9 +96,7 @@ export default function App() {
             if (uxState.activeChannel) setActiveChannel(uxState.activeChannel);
           }
         } else {
-          // Default initial curve
-          const defaultCurve: LibraryCurve = { id: crypto.randomUUID(), name: 'Default Sweep', category: 'Basic', position: 0, curve: initialCurve };
-          setLibrary([defaultCurve]);
+          setLibrary(createMinimalBasicSpace());
         }
       } catch (e) {
         console.error("Failed to load state", e);
@@ -212,6 +220,15 @@ export default function App() {
 
       return sortAnchors([...prev, newEntry]);
     });
+  };
+
+  const resetToMinimalBasicSpace = () => {
+    setLibrary(createMinimalBasicSpace());
+    setAtlasTexture(null);
+    setCurveState({ lever: 0 });
+    setState2d({ lever: 0 });
+    setState3d({ lever: 0 });
+    setDraggingAnchorId(null);
   };
 
   const categoryGradient = useMemo(() => {
@@ -378,8 +395,13 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-4">
-             <button className="text-zinc-500 hover:text-zinc-300">
-                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 7v6h6"></path><path d="M21 17a9 9 0 00-9-9 9 9 0 00-6 2.3L3 13"></path></svg>
+             <button
+                onClick={resetToMinimalBasicSpace}
+                className="text-zinc-500 hover:text-zinc-300"
+                title="Reset space to minimal basic representation"
+                aria-label="Reset space to minimal basic representation"
+             >
+                 <RotateCcw className="w-5 h-5" />
              </button>
              <button className="text-zinc-500 hover:text-zinc-300">
                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 7v6h-6"></path><path d="M3 17a9 9 0 019-9 9 9 0 016 2.3l3 2.7"></path></svg>
@@ -433,8 +455,19 @@ export default function App() {
                  <CurveEditor curve={activeSpaceCurve} onChange={updateActiveCurve} activeChannel={activeChannel} interpMode={interpMode} />
               </div>
                 
-                {/* 3 Panels: Edit Filter, View Context, Diagnostics */}
+                {/* 3 Panels: View Context, Edit Filter, Diagnostics */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                    <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
+                        <h3 className="text-[10px] uppercase tracking-wider font-bold text-zinc-400 border-b border-zinc-800 pb-2">View Context <span className="font-normal normal-case text-zinc-600">(Affects which curves you see)</span></h3>
+                        <div className="flex bg-black border border-zinc-800 rounded-lg p-0.5">
+                            <button className="flex-1 py-1.5 text-[11px] font-medium bg-zinc-800 text-white rounded-md shadow-sm">Show All</button>
+                            <button className="flex-1 py-1.5 text-[11px] font-medium text-zinc-500 hover:text-white transition-colors">Focus Filtered</button>
+                            <button className="flex-1 py-1.5 text-[11px] font-medium text-zinc-500 hover:text-white transition-colors">Ghost Inactive</button>
+                            <button className="flex-1 py-1.5 text-[11px] font-medium text-zinc-500 hover:text-white transition-colors">Hide Inactive</button>
+                        </div>
+                        <p className="text-[10px] text-zinc-500 pt-1">All channels visible. Inactive channels are ghosted.</p>
+                    </div>
+
                     <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
                         <h3 className="text-[10px] uppercase tracking-wider font-bold text-zinc-400 border-b border-zinc-800 pb-2">Edit Filter <span className="font-normal normal-case text-zinc-600">(Affects which channels you edit)</span></h3>
                         <div className="flex gap-2">
@@ -455,17 +488,6 @@ export default function App() {
                              ))}
                         </div>
                         <p className="text-[10px] text-zinc-500 pt-1">All channels enabled. Filter limits available targets.</p>
-                    </div>
-
-                    <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
-                        <h3 className="text-[10px] uppercase tracking-wider font-bold text-zinc-400 border-b border-zinc-800 pb-2">View Context <span className="font-normal normal-case text-zinc-600">(Affects which curves you see)</span></h3>
-                        <div className="flex bg-black border border-zinc-800 rounded-lg p-0.5">
-                            <button className="flex-1 py-1.5 text-[11px] font-medium bg-zinc-800 text-white rounded-md shadow-sm">Show All</button>
-                            <button className="flex-1 py-1.5 text-[11px] font-medium text-zinc-500 hover:text-white transition-colors">Focus Filtered</button>
-                            <button className="flex-1 py-1.5 text-[11px] font-medium text-zinc-500 hover:text-white transition-colors">Ghost Inactive</button>
-                            <button className="flex-1 py-1.5 text-[11px] font-medium text-zinc-500 hover:text-white transition-colors">Hide Inactive</button>
-                        </div>
-                        <p className="text-[10px] text-zinc-500 pt-1">All channels visible. Inactive channels are ghosted.</p>
                     </div>
 
                     <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
