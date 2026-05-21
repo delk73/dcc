@@ -4,9 +4,8 @@ import { ColorCurve, Channel, CurvePoint, LibraryCurve } from './types';
 import { CurveEditor } from './components/CurveEditor';
 import { CurvePreview } from './components/CurvePreview';
 import { PointInspector } from './components/PointInspector';
-import { Layers, Plus, RotateCcw, Settings2 } from 'lucide-react';
+import { Layers, RotateCcw, Settings2 } from 'lucide-react';
 import { cn } from './lib/utils';
-import { motion } from 'motion/react';
 import { InterpMode, computeTangents, evaluateCurve, blendSpaceCurves } from './lib/curveUtils';
 import {
   POSITION_EPSILON,
@@ -346,6 +345,132 @@ export default function App() {
     dispatch({ type: 'toggle-edit-channel', channel });
   };
 
+  const renderCurveEditorPanel = () => (
+    <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-6 pb-2 space-y-4">
+       <div className="space-y-3">
+           <h3 className="text-[11px] uppercase tracking-widest font-bold text-zinc-300">Curve Editor</h3>
+           <PointInspector
+              point={selectedCurvePoint}
+              pointNumber={selectedCurvePointNumber}
+              channelLabel={selectedPoint?.channel.toUpperCase()}
+              onPatchPoint={updateSelectedPoint}
+              onPatchEditablePoint={updateEditableSelectedPoint}
+              onConvertToAuthored={convertSelectedPointToAuthored}
+           />
+       </div>
+
+       <CurveEditor
+          curve={activeSpaceCurve}
+          onChange={updateActiveCurve}
+          activeChannel={activeChannel}
+          editChannels={editChannels}
+          selectedPoint={selectedPoint}
+          onActiveChannelChange={(channel) => dispatch({ type: 'set-active-channel', channel })}
+          onSelectedPointChange={(selection) => selection
+            ? dispatch({ type: 'select-point', selection })
+            : dispatch({ type: 'clear-point-selection' })}
+          interpMode={interpMode}
+       />
+    </div>
+  );
+
+  const renderEditFilter = () => (
+    <div className="grid grid-cols-1 gap-4">
+        <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
+            <h3 className="text-[10px] uppercase tracking-wider font-bold text-zinc-400 border-b border-zinc-800 pb-2">Edit Filter <span className="font-normal normal-case text-zinc-600">(Affects which channels you edit)</span></h3>
+            <div className="flex gap-2">
+                 {channelInfo.map((ci) => (
+                    <button
+                        key={ci.id}
+                        onClick={() => toggleEditChannel(ci.id)}
+                        aria-pressed={editChannels[ci.id]}
+                        className={cn(
+                        "flex-1 py-1.5 rounded-lg text-xs font-medium transition-all border flex items-center justify-center gap-2",
+                        editChannels[ci.id]
+                            ? `bg-zinc-800 border-zinc-700 text-white shadow-sm` 
+                            : "bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:bg-white/5",
+                        activeChannel === ci.id && editChannels[ci.id] && "ring-1 ring-white/30"
+                        )}
+                    >
+                        <span className={cn("w-2 h-2 rounded-full", ci.color)} />
+                        {ci.label.charAt(0)}
+                    </button>
+                 ))}
+            </div>
+            <p className="text-[10px] text-zinc-500 pt-1">{editFilterLabel}</p>
+        </div>
+    </div>
+  );
+
+  const renderSpaceContinuum = () => (
+    <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-6 flex flex-col gap-6">
+        <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+                <h3 className="text-xs uppercase tracking-wider font-bold text-zinc-300">Space Continuum <span className="text-zinc-600 font-normal normal-case">(1D)</span></h3>
+            </div>
+        </div>
+        
+        <div ref={continuumTrackRef} className="relative pt-6 pb-8 mx-4">
+             <div className="absolute top-1/2 -mt-1 left-0 right-0 h-2 rounded-full overflow-hidden opacity-50" style={{ background: categoryGradient }} />
+             
+             <div className="absolute top-full text-[10px] text-zinc-500 font-mono w-full flex justify-between mt-2 px-1">
+                 <div className="flex flex-col"><span className="text-zinc-300">0.00</span>Start</div>
+                 <div>0.25</div>
+                 <div>0.50</div>
+                 <div>0.75</div>
+                 <div className="flex flex-col items-end"><span className="text-zinc-300">1.00</span>End</div>
+             </div>
+             
+             <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 pointer-events-none z-40">
+                 {normalizedCategoryCurves.map((c) => (
+                     <div 
+                        key={c.id}
+                        role="slider"
+                        aria-label={`Authored anchor at ${(c.position || 0).toFixed(2)}`}
+                        aria-valuemin={0}
+                        aria-valuemax={1}
+                        aria-valuenow={c.position || 0}
+                        tabIndex={0}
+                        className={cn(
+                          "pointer-events-auto absolute w-5 h-5 -mt-2.5 -ml-2.5 rounded-full cursor-grab active:cursor-grabbing",
+                          "flex items-center justify-center touch-none"
+                        )}
+                        style={{ left: `${(c.position || 0) * 100}%` }}
+                        onPointerDown={(e) => handleAnchorPointerDown(e, c.id)}
+                        onPointerMove={handleAnchorPointerMove}
+                        onPointerUp={handleAnchorPointerUp}
+                        onPointerCancel={handleAnchorPointerUp}
+                     >
+                        <div className={cn(
+                          "w-3 h-3 rounded-full bg-white shadow-md border-2 border-zinc-900 transition-transform",
+                          interaction.type === 'dragging-anchor' && interaction.anchorId === c.id && "scale-125"
+                        )} />
+                     </div>
+                 ))}
+             </div>
+             
+             <input 
+                  type="range" 
+                  list="variant-ticks"
+                  min="0" max="1" step="0.001"
+                  value={spaceLever}
+                  onChange={(e) => setSpacePosition(parseFloat(e.target.value))}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-30"
+                />
+                
+             <div className="absolute top-0 bottom-0 pointer-events-none w-8 bg-indigo-500/20 border border-indigo-500/50 rounded -ml-4 z-20 flex items-center justify-center shadow-[0_0_15px_rgba(99,102,241,0.2)]" style={{ left: `${spaceLever * 100}%` }}>
+                 <div className="w-3 h-8 bg-indigo-400 rounded-full" />
+             </div>
+        </div>
+        
+        <div className="flex items-center justify-between text-xs font-mono text-zinc-400 mt-2">
+            <div className="flex gap-4">
+                <span>X: {spaceLever.toFixed(2)}</span>
+            </div>
+        </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen select-none bg-black text-zinc-100 font-sans selection:bg-indigo-500/30">
       <div className="max-w-[1400px] mx-auto p-4 sm:p-8 space-y-8">
@@ -375,25 +500,7 @@ export default function App() {
              </button>
           </div>
 
-          <div className="flex items-center gap-2 mx-auto">
-             <button className="w-10 h-10 flex items-center justify-center rounded-md border border-indigo-500/50 bg-indigo-500/10 text-indigo-400">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"></path><path d="M13 13l6 6"></path></svg>
-             </button>
-             <button className="w-10 h-10 flex items-center justify-center rounded-md border border-zinc-800 bg-transparent text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"></path><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"></path><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"></path><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"></path></svg>
-             </button>
-             <button className="w-10 h-10 flex items-center justify-center rounded-md border border-zinc-800 bg-transparent text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300">
-                <Plus className="w-5 h-5" />
-             </button>
-             <button className="w-10 h-10 flex items-center justify-center rounded-md border border-zinc-800 bg-transparent text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M9 19l3 3 3-3M19 9l3 3-3 3M2 12h20M12 2v20"></path></svg>
-             </button>
-             <button className="w-10 h-10 flex items-center justify-center rounded-md border border-zinc-800 bg-transparent text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300">
-                <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3h18v18H3zM8 3v18M16 3v18M3 8h18M3 16h18"></path></svg>
-             </button>            
-          </div>
-
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 ml-auto">
              <button
                 onClick={resetToMinimalBasicSpace}
                 className="text-zinc-500 hover:text-zinc-300"
@@ -430,159 +537,26 @@ export default function App() {
                   />
               </div>
 
-              <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-6 pb-2 space-y-4">
-                 <div className="space-y-3">
-                     <h3 className="text-[11px] uppercase tracking-widest font-bold text-zinc-300">Curve Editor</h3>
-                     <PointInspector
-                        point={selectedCurvePoint}
-                        pointNumber={selectedCurvePointNumber}
-                        channelLabel={selectedPoint?.channel.toUpperCase()}
-                        onPatchPoint={updateSelectedPoint}
-                        onPatchEditablePoint={updateEditableSelectedPoint}
-                        onConvertToAuthored={convertSelectedPointToAuthored}
-                     />
-                 </div>
-
-                 <CurveEditor
-                    curve={activeSpaceCurve}
-                    onChange={updateActiveCurve}
-                    activeChannel={activeChannel}
-                    editChannels={editChannels}
-                    selectedPoint={selectedPoint}
-                    onActiveChannelChange={(channel) => dispatch({ type: 'set-active-channel', channel })}
-                    onSelectedPointChange={(selection) => selection
-                      ? dispatch({ type: 'select-point', selection })
-                      : dispatch({ type: 'clear-point-selection' })}
-                    interpMode={interpMode}
-                 />
-              </div>
-                
-                {/* Editor Panels */}
-                <div className="grid grid-cols-1 gap-4">
-                    <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
-                        <h3 className="text-[10px] uppercase tracking-wider font-bold text-zinc-400 border-b border-zinc-800 pb-2">Edit Filter <span className="font-normal normal-case text-zinc-600">(Affects which channels you edit)</span></h3>
-                        <div className="flex gap-2">
-                             {channelInfo.map((ci) => (
-                                <button
-                                    key={ci.id}
-                                    onClick={() => toggleEditChannel(ci.id)}
-                                    aria-pressed={editChannels[ci.id]}
-                                    className={cn(
-                                    "flex-1 py-1.5 rounded-lg text-xs font-medium transition-all border flex items-center justify-center gap-2",
-                                    editChannels[ci.id]
-                                        ? `bg-zinc-800 border-zinc-700 text-white shadow-sm` 
-                                        : "bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:bg-white/5",
-                                    activeChannel === ci.id && editChannels[ci.id] && "ring-1 ring-white/30"
-                                    )}
-                                >
-                                    <span className={cn("w-2 h-2 rounded-full", ci.color)} />
-                                    {ci.label.charAt(0)}
-                                </button>
-                             ))}
-                        </div>
-                        <p className="text-[10px] text-zinc-500 pt-1">{editFilterLabel}</p>
-                    </div>
-                </div>
-
-                {/* Space Continuum */}
-                <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-6 flex flex-col gap-6">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <h3 className="text-xs uppercase tracking-wider font-bold text-zinc-300">Space Continuum <span className="text-zinc-600 font-normal normal-case">(1D)</span></h3>
-                        </div>
-                    </div>
-                    
-                    <div ref={continuumTrackRef} className="relative pt-6 pb-8 mx-4">
-                         <div className="absolute top-1/2 -mt-1 left-0 right-0 h-2 rounded-full overflow-hidden opacity-50" style={{ background: categoryGradient }} />
-                         
-                         {/* Axis labels */}
-                         <div className="absolute top-full text-[10px] text-zinc-500 font-mono w-full flex justify-between mt-2 px-1">
-                             <div className="flex flex-col"><span className="text-zinc-300">0.00</span>Start</div>
-                             <div>0.25</div>
-                             <div>0.50</div>
-                             <div>0.75</div>
-                             <div className="flex flex-col items-end"><span className="text-zinc-300">1.00</span>End</div>
-                         </div>
-                         
-                         {/* Anchor Ticks */}
-                         <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 pointer-events-none z-40">
-                             {normalizedCategoryCurves.map((c, i) => (
-                                 <div 
-                                    key={c.id}
-                                    role="slider"
-                                    aria-label={`Authored anchor at ${(c.position || 0).toFixed(2)}`}
-                                    aria-valuemin={0}
-                                    aria-valuemax={1}
-                                    aria-valuenow={c.position || 0}
-                                    tabIndex={0}
-                                    className={cn(
-                                      "pointer-events-auto absolute w-5 h-5 -mt-2.5 -ml-2.5 rounded-full cursor-grab active:cursor-grabbing",
-                                      "flex items-center justify-center touch-none"
-                                    )}
-                                    style={{ left: `${(c.position || 0) * 100}%` }}
-                                    onPointerDown={(e) => handleAnchorPointerDown(e, c.id)}
-                                    onPointerMove={handleAnchorPointerMove}
-                                    onPointerUp={handleAnchorPointerUp}
-                                    onPointerCancel={handleAnchorPointerUp}
-                                 >
-                                    <div className={cn(
-                                      "w-3 h-3 rounded-full bg-white shadow-md border-2 border-zinc-900 transition-transform",
-                                      interaction.type === 'dragging-anchor' && interaction.anchorId === c.id && "scale-125"
-                                    )} />
-                                 </div>
-                             ))}
-                         </div>
-                         
-                         <input 
-                              type="range" 
-                              list="variant-ticks"
-                              min="0" max="1" step="0.001"
-                              value={spaceLever}
-                              onChange={(e) => setSpacePosition(parseFloat(e.target.value))}
-                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-30"
-                            />
-                            
-                         {/* Custom thumb to represent the scrubber */}
-                         <div className="absolute top-0 bottom-0 pointer-events-none w-8 bg-indigo-500/20 border border-indigo-500/50 rounded -ml-4 z-20 flex items-center justify-center shadow-[0_0_15px_rgba(99,102,241,0.2)]" style={{ left: `${spaceLever * 100}%` }}>
-                             <div className="w-3 h-8 bg-indigo-400 rounded-full" />
-                         </div>
-                    </div>
-                    
-                    <div className="flex items-center justify-between text-xs font-mono text-zinc-400 mt-2">
-                        <div className="flex gap-4">
-                            <span>X: {spaceLever.toFixed(2)}</span>
-                        </div>
-                    </div>
-                </div>
+                {renderCurveEditorPanel()}
+                {renderEditFilter()}
+                {renderSpaceContinuum()}
 
             </div>
             )}
             
             {mainView === '2d' && (
-                <div className="flex flex-col gap-8 h-full min-h-[500px]">
-                    <motion.div layout className="flex-1 flex flex-col gap-8">
-                        <AtlasViewer 
-                            curves={spaceCurves} 
-                            interpMode={interpMode} 
-                            spaceLever={spaceLever} 
-                            setSpaceLever={setSpacePosition}
-                            onTextureUpdate={setAtlasTexture}
-                            onExportAtlas={handleExportLibraryLUT}
-                            canExportAtlas={normalizedCategoryCurves.length > 1}
-                        />
-                        <motion.div
-                            layout
-                            className="flex flex-col gap-8"
-                        >
-                            <CurvePreview
-                                curve={activeSpaceCurve}
-                                interpMode={interpMode}
-                                textureData={atlasTexture}
-                                sampleY={spaceLever}
-                            />
-
-                        </motion.div>
-                    </motion.div>
+                <div className="flex flex-col gap-8">
+                    <AtlasViewer 
+                        curves={spaceCurves} 
+                        interpMode={interpMode} 
+                        spaceLever={spaceLever} 
+                        onTextureUpdate={setAtlasTexture}
+                        onExportAtlas={handleExportLibraryLUT}
+                        canExportAtlas={normalizedCategoryCurves.length > 1}
+                    />
+                    {renderCurveEditorPanel()}
+                    {renderEditFilter()}
+                    {renderSpaceContinuum()}
                 </div>
             )}
 

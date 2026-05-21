@@ -7,13 +7,12 @@ interface AtlasViewerProps {
   curves: LibraryCurve[];
   interpMode: InterpMode;
   spaceLever: number;
-  setSpaceLever: (val: number) => void;
   onTextureUpdate?: (tex: ImageData) => void;
   onExportAtlas?: () => void;
   canExportAtlas?: boolean;
 }
 
-export const AtlasViewer: React.FC<AtlasViewerProps> = ({ curves, interpMode, spaceLever, setSpaceLever, onTextureUpdate, onExportAtlas, canExportAtlas = true }) => {
+export const AtlasViewer: React.FC<AtlasViewerProps> = ({ curves, interpMode, spaceLever, onTextureUpdate, onExportAtlas, canExportAtlas = true }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const deferredCurves = React.useDeferredValue(curves);
@@ -107,20 +106,10 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({ curves, interpMode, sp
     setTimeout(() => onTextureUpdate?.(imageData), 0);
   }, [deferredCurves, interpMode, onTextureUpdate]);
 
-  const handlePointer = (e: React.MouseEvent | React.TouchEvent | React.PointerEvent) => {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-      const y = clientY - rect.top;
-      const t = Math.max(0, Math.min(1, 1.0 - (y / rect.height)));
-      setSpaceLever(t);
-  };
-
   return (
-    <div className="flex flex-col gap-8">
-      {/* 2D Atlas Card */}
-      <div className="flex flex-col gap-4 bg-zinc-900 border border-zinc-800 rounded-xl p-4 shadow-xl">
+      <div className="flex flex-col gap-4 bg-[#09090b] border border-zinc-800 rounded-xl p-6">
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-zinc-100 font-medium tracking-tight">2D Interpolation Atlas</h3>
+          <h3 className="text-zinc-100 font-bold text-[11px] tracking-widest uppercase">2D ATLAS <span className="text-zinc-500 font-normal normal-case tracking-normal">(Output)</span></h3>
           {onExportAtlas && (
             <button
               onClick={onExportAtlas}
@@ -137,19 +126,12 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({ curves, interpMode, sp
             <div className="flex gap-6 items-stretch">
               <div className="flex flex-col justify-between py-2 text-[10px] text-zinc-500 font-mono tracking-wider">
                   <span>1.0</span>
-                  <span className="rotate-[-90deg] whitespace-nowrap">SPACE LEVER</span>
+                  <span className="rotate-[-90deg] whitespace-nowrap">SPACE</span>
                   <span>0.0</span>
               </div>
 
               <div 
-                className="flex-1 relative aspect-square rounded-lg overflow-hidden border border-zinc-800 shadow-inner group cursor-crosshair touch-none"
-            onPointerDown={(e) => {
-                e.currentTarget.setPointerCapture(e.pointerId);
-                handlePointer(e);
-            }}
-            onPointerMove={(e) => {
-                if (e.buttons > 0) handlePointer(e);
-            }}
+                className="flex-1 relative aspect-[2/1] min-h-80 rounded-lg overflow-hidden border border-zinc-800 shadow-inner touch-none"
             style={{
               backgroundColor: '#09090b',
               backgroundImage: `
@@ -176,26 +158,5 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({ curves, interpMode, sp
         </div>
       </div>
       </div>
-
-      {/* Editor Card */}
-      <div className="flex flex-col gap-4 bg-zinc-900 border border-zinc-800 rounded-xl p-6 shadow-xl">
-        <div className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-medium">Atlas Editor</h2>
-          </div>
-
-          <div className="flex items-center gap-4 bg-black border border-zinc-800 rounded-xl px-4 py-3 shadow-inner">
-            <div className="flex flex-col flex-1 gap-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-zinc-400 font-medium tracking-wide uppercase">Space Variant</span>
-                <div className="flex items-center gap-3">
-                   <span className="text-xs text-indigo-400 font-mono">{(spaceLever * 100).toFixed(0)}%</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 };
