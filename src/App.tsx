@@ -347,7 +347,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-black text-zinc-100 font-sans selection:bg-indigo-500/30">
+    <div className="min-h-screen select-none bg-black text-zinc-100 font-sans selection:bg-indigo-500/30">
       <div className="max-w-[1400px] mx-auto p-4 sm:p-8 space-y-8">
         
         {/* Top Navbar */}
@@ -543,8 +543,8 @@ export default function App() {
                             />
                             
                          {/* Custom thumb to represent the scrubber */}
-                         <div className="absolute top-2 bottom-2 pointer-events-none w-4 bg-indigo-500/20 border border-indigo-500/50 rounded -ml-2 z-20 flex items-center justify-center shadow-[0_0_15px_rgba(99,102,241,0.2)]" style={{ left: `${spaceLever * 100}%` }}>
-                             <div className="w-1.5 h-6 bg-indigo-400 rounded-full" />
+                         <div className="absolute top-0 bottom-0 pointer-events-none w-8 bg-indigo-500/20 border border-indigo-500/50 rounded -ml-4 z-20 flex items-center justify-center shadow-[0_0_15px_rgba(99,102,241,0.2)]" style={{ left: `${spaceLever * 100}%` }}>
+                             <div className="w-3 h-8 bg-indigo-400 rounded-full" />
                          </div>
                     </div>
                     

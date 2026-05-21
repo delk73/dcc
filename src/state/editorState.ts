@@ -7,7 +7,7 @@ import {
   normalizeAnchors,
   sortAnchors
 } from '../lib/spaceUtils';
-import { normalizeLibraryCurves } from '../lib/curvePointPolicy';
+import { materializeColorCurveForAuthoring, normalizeLibraryCurves } from '../lib/curvePointPolicy';
 import type { SelectedPointRef } from '../lib/curvePointPolicy';
 
 export type MainView = 'curve' | '2d' | '3d';
@@ -206,10 +206,11 @@ export const editorReducer = (state: EditorState, action: EditorAction): EditorS
       const editPosition = clampSpacePosition(state.ui.levers[state.ui.mainView]);
       const anchors = normalizeAnchors(state.document.library);
       const existingAnchor = anchors.find(anchor => Math.abs(anchor.position - editPosition) <= POSITION_EPSILON);
+      const authoredCurve = materializeColorCurveForAuthoring(action.curve);
       const library = existingAnchor
         ? state.document.library.map(anchor =>
             anchor.id === existingAnchor.id
-              ? { ...anchor, position: existingAnchor.position, curve: cloneCurve(action.curve), authored: true }
+              ? { ...anchor, position: existingAnchor.position, curve: cloneCurve(authoredCurve), authored: true }
               : anchor
           )
         : [
@@ -219,7 +220,7 @@ export const editorReducer = (state: EditorState, action: EditorAction): EditorS
               name: `Anchor ${anchors.length + 1}`,
               category: anchors[0]?.category ?? 'default',
               position: editPosition,
-              curve: cloneCurve(action.curve),
+              curve: cloneCurve(authoredCurve),
               authored: true,
               source: 'implicit-edit' as const
             }

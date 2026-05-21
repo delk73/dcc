@@ -123,6 +123,49 @@ export function normalizeColorCurve(curve: unknown): types.ColorCurve {
   };
 }
 
+const materializePointId = (point: types.CurvePoint, index: number) => {
+  if (point.id.startsWith('sample_left_') || point.id.startsWith('sample_right_')) {
+    return createStablePointId(point, index);
+  }
+
+  if (point.id.startsWith('derived_')) {
+    const unwrappedId = point.id.slice('derived_'.length);
+    return unwrappedId.includes('_sample_left_') || unwrappedId.includes('_sample_right_')
+      ? createStablePointId(point, index)
+      : unwrappedId;
+  }
+
+  return point.id;
+};
+
+export function materializeColorCurveForAuthoring(curve: types.ColorCurve): types.ColorCurve {
+  const materializeChannel = (points: types.CurvePoint[]) => {
+    const usedIds = new Set<string>();
+
+    return orderCurvePoints(points).map((point, index) => {
+      const baseId = materializePointId(point, index);
+      const id = usedIds.has(baseId) ? createStablePointId(point, index) : baseId;
+      usedIds.add(id);
+
+      return {
+        ...point,
+        id,
+        source: 'authored' as const,
+        edit: point.edit === 'locked' ? 'locked' as const : 'free' as const,
+        flags: [...point.flags],
+        constraints: point.constraints ? { ...point.constraints } : undefined
+      };
+    });
+  };
+
+  return {
+    r: materializeChannel(curve.r),
+    g: materializeChannel(curve.g),
+    b: materializeChannel(curve.b),
+    a: materializeChannel(curve.a)
+  };
+}
+
 export function normalizeLibraryCurves(library: types.LibraryCurve[]): types.LibraryCurve[] {
   return library.map(curve => ({
     ...curve,

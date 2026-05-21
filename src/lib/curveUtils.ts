@@ -1,21 +1,121 @@
 import { ColorCurve, CurvePoint } from '../types';
 import {
-  createStablePointId,
-  fromTimeKey,
   getOutgoingInterpolation,
-  toTimeKey
+  getEdgeOwner
 } from './curvePointPolicy';
 
 export type InterpMode = 'linear' | 'cubic' | 'constant';
 
-const mergeCurveTimeKeys = (...curves: CurvePoint[][]): number[] =>
-  Array.from(new Set(
-    curves.flatMap(curve => curve.map(point => toTimeKey(point.time)))
-  ))
-    .sort((a, b) => a - b);
+const EXACT_ANCHOR_EPSILON = 1e-9;
 
-const findPointAtTimeKey = (points: CurvePoint[], timeKey: number) =>
-  points.find(point => toTimeKey(point.time) === timeKey);
+const orderPointsByTime = (points: CurvePoint[]) =>
+  [...points].sort((a, b) => a.time - b.time);
+
+const createEvaluatedPoint = (
+  curve: CurvePoint[],
+  time: number,
+  interpMode: InterpMode,
+  id: string
+): CurvePoint => {
+  const orderedCurve = orderPointsByTime(curve);
+  return {
+    id,
+    time,
+    value: evaluateCurve(orderedCurve, computeTangents(orderedCurve), time, interpMode),
+    role: 'interior',
+    source: 'derived',
+    edit: 'convertible',
+    continuity: 'smooth',
+    outInterpolation: 'smooth',
+    flags: []
+  };
+};
+
+const findMatchingPointIndex = (
+  point: CurvePoint,
+  candidates: CurvePoint[],
+  fallbackIndex: number,
+  usedIndexes: Set<number>,
+  allowIndexFallback: boolean
+) => {
+  const sameIdIndex = candidates.findIndex((candidate, index) =>
+    !usedIndexes.has(index) && candidate.id === point.id
+  );
+  if (sameIdIndex !== -1) return sameIdIndex;
+
+  const edgeOwner = getEdgeOwner(point);
+  if (edgeOwner) {
+    const sameEdgeIndex = candidates.findIndex((candidate, index) =>
+      !usedIndexes.has(index) && getEdgeOwner(candidate) === edgeOwner
+    );
+    if (sameEdgeIndex !== -1) return sameEdgeIndex;
+  }
+
+  if (!allowIndexFallback) return -1;
+  const fallback = candidates[fallbackIndex];
+  if (!fallback || usedIndexes.has(fallbackIndex)) return -1;
+  if (Boolean(getEdgeOwner(point)) !== Boolean(getEdgeOwner(fallback))) return -1;
+  return fallbackIndex;
+};
+
+const pairCurvePoints = (ch1: CurvePoint[], ch2: CurvePoint[], interpMode: InterpMode) => {
+  const left = orderPointsByTime(ch1);
+  const right = orderPointsByTime(ch2);
+  const usedRightIndexes = new Set<number>();
+  const usedLeftIndexes = new Set<number>();
+  const allowIndexFallback = left.length === right.length;
+
+  const matchedPairs = left.flatMap((point, index) => {
+    const matchIndex = findMatchingPointIndex(point, right, index, usedRightIndexes, allowIndexFallback);
+    if (matchIndex === -1) return [];
+    usedLeftIndexes.add(index);
+    usedRightIndexes.add(matchIndex);
+    return [{ left: point, right: right[matchIndex] }];
+  });
+
+  const leftOnlyPairs = left.flatMap((point, index) => {
+    if (usedLeftIndexes.has(index) || getEdgeOwner(point)) return [];
+    return [{
+      left: point,
+      right: createEvaluatedPoint(ch2, point.time, interpMode, `sample_right_${point.id}`)
+    }];
+  });
+
+  const rightOnlyPairs = right.flatMap((point, index) => {
+    if (usedRightIndexes.has(index) || getEdgeOwner(point)) return [];
+    return [{
+      left: createEvaluatedPoint(ch1, point.time, interpMode, `sample_left_${point.id}`),
+      right: point
+    }];
+  });
+
+  return [...matchedPairs, ...leftOnlyPairs, ...rightOnlyPairs];
+};
+
+const blendPointRole = (left: CurvePoint, right: CurvePoint, index: number, total: number): CurvePoint['role'] => {
+  if (index === 0 || index === total - 1 || getEdgeOwner(left) || getEdgeOwner(right)) return 'boundary';
+  if (left.role === right.role && (left.role === 'anchor' || left.role === 'feature' || left.role === 'sample')) {
+    return left.role;
+  }
+  return 'interior';
+};
+
+const blendPointFlags = (left: CurvePoint, right: CurvePoint): CurvePoint['flags'] =>
+  left.flags.filter(flag =>
+    (flag === 'uncompressible' || flag === 'protected') && right.flags.includes(flag)
+  );
+
+const isEvaluatedCounterpart = (point: CurvePoint) =>
+  point.id.startsWith('sample_left_') || point.id.startsWith('sample_right_');
+
+const blendPointId = (left: CurvePoint, right: CurvePoint, index: number) =>
+  isEvaluatedCounterpart(left)
+    ? right.id
+    : isEvaluatedCounterpart(right)
+      ? left.id
+      : left.id === right.id
+        ? `derived_${left.id}`
+        : `derived_${index}_${left.id}_${right.id}`;
 
 export function computeTangents(data: CurvePoint[]): number[] {
   const n = data.length;
@@ -79,40 +179,32 @@ export function evaluateCurve(keyframes: CurvePoint[], tangents: number[], t: nu
 
 export function blendCurves(c1: ColorCurve, c2: ColorCurve, blendT: number, interpMode: InterpMode): ColorCurve {
   const blendChannel = (ch1: CurvePoint[], ch2: CurvePoint[]) => {
-    const timeKeys = mergeCurveTimeKeys(ch1, ch2);
-    const t1 = computeTangents(ch1);
-    const t2 = computeTangents(ch2);
+    const pairs = pairCurvePoints(ch1, ch2, interpMode)
+      .map(({ left, right }) => {
+        const time = left.time + (right.time - left.time) * blendT;
+        const value = left.value + (right.value - left.value) * blendT;
+        return { left, right, time, value };
+      })
+      .sort((a, b) => a.time - b.time);
+    const total = pairs.length;
     
-    return timeKeys.map((timeKey, index) => {
-      const time = fromTimeKey(timeKey);
-      const val1 = evaluateCurve(ch1, t1, time, interpMode);
-      const val2 = evaluateCurve(ch2, t2, time, interpMode);
-      const sourcePoint = findPointAtTimeKey(ch1, timeKey) ?? findPointAtTimeKey(ch2, timeKey);
-      const isFirst = index === 0;
-      const isLast = index === timeKeys.length - 1;
-      const value = val1 + (val2 - val1) * blendT;
-      const role: CurvePoint['role'] = isFirst || isLast
-        ? 'boundary'
-        : sourcePoint?.role === 'anchor' || sourcePoint?.role === 'feature'
-          ? sourcePoint.role
-          : 'interior';
-      const flags: CurvePoint['flags'] = sourcePoint?.flags.filter(flag => flag === 'uncompressible' || flag === 'protected') ?? [];
+    return pairs.map(({ left, right, time, value }, index) => {
+      const edgeOwner = getEdgeOwner(left) ?? getEdgeOwner(right);
+      const role = blendPointRole(left, right, index, total);
 
       const point: CurvePoint = {
-        id: createStablePointId({ time, value }, index),
+        id: blendPointId(left, right, index),
         time,
         value,
         role,
         source: 'derived',
         edit: 'convertible',
-        continuity: sourcePoint?.continuity ?? 'smooth',
-        outInterpolation: sourcePoint?.outInterpolation ?? 'smooth',
-        flags,
-        constraints: isFirst
-          ? { edgeOwner: 'start' }
-          : isLast
-            ? { edgeOwner: 'end' }
-            : undefined
+        continuity: left.continuity === right.continuity ? left.continuity : 'smooth',
+        outInterpolation: left.outInterpolation === right.outInterpolation ? left.outInterpolation : 'smooth',
+        flags: blendPointFlags(left, right),
+        constraints: edgeOwner
+          ? { edgeOwner }
+          : undefined
       };
       return point;
     });
@@ -131,6 +223,9 @@ export function blendSpaceCurves(curves: { position: number, curve: ColorCurve }
   if (curves.length === 1) return curves[0].curve;
   
   const sorted = [...curves].sort((a, b) => a.position - b.position);
+  const exactAnchor = sorted.find(anchor => Math.abs(position - anchor.position) <= EXACT_ANCHOR_EPSILON);
+  if (exactAnchor) return exactAnchor.curve;
+
   if (position <= sorted[0].position) return sorted[0].curve;
   if (position >= sorted[sorted.length - 1].position) return sorted[sorted.length - 1].curve;
   

@@ -11,7 +11,9 @@ import {
   createAuthoredInteriorPoint,
   createStablePointId,
   fromTimeKey,
+  getEdgeOwner,
   getOutgoingInterpolation,
+  materializeColorCurveForAuthoring,
   migrateKeyframesToCurvePoints,
   normalizeCurvePoints,
   orderCurvePoints,
@@ -24,7 +26,7 @@ import {
   clampPointMove,
   toTimeKey
 } from './curvePointPolicy';
-import { blendCurves, computeTangents, evaluateCurve } from './curveUtils';
+import { blendCurves, blendSpaceCurves, computeTangents, evaluateCurve } from './curveUtils';
 import { CurvePoint } from '../types';
 import { createInitialEditorState, serializeUxState } from '../state/editorState';
 
@@ -134,6 +136,101 @@ assert.equal(
   createStablePointId({ time: 0.500000001, value: 0.8 }, 1)
 );
 
+const movingMiddleBlend = blendCurves(
+  {
+    r: [
+      { ...migrated[0], time: 0 },
+      { ...migrated[1], id: 'moving-middle', time: 0.25, value: 0.2 },
+      { ...migrated[2], time: 1 }
+    ],
+    g: migrated,
+    b: migrated,
+    a: migrated
+  },
+  {
+    r: [
+      { ...migrated[0], time: 0 },
+      { ...migrated[1], id: 'moving-middle', time: 0.75, value: 1.2 },
+      { ...migrated[2], time: 1 }
+    ],
+    g: migrated,
+    b: migrated,
+    a: migrated
+  },
+  0.5,
+  'cubic'
+);
+assert.equal(movingMiddleBlend.r[1].source, 'derived');
+assert.equal(movingMiddleBlend.r[1].edit, 'convertible');
+assert.equal(movingMiddleBlend.r[1].time, 0.5);
+assert.equal(movingMiddleBlend.r[1].value, 0.7);
+
+const removedMiddleBlend = blendCurves(
+  {
+    r: [
+      { ...migrated[0], time: 0 },
+      { ...migrated[1], id: 'removed-middle', time: 0.5, value: 0.8 },
+      { ...migrated[2], time: 1 }
+    ],
+    g: migrated,
+    b: migrated,
+    a: migrated
+  },
+  {
+    r: [
+      { ...migrated[0], time: 0 },
+      { ...migrated[2], time: 1 }
+    ],
+    g: migrated,
+    b: migrated,
+    a: migrated
+  },
+  0.5,
+  'cubic'
+);
+assert.deepEqual(removedMiddleBlend.r.map(point => getEdgeOwner(point)), ['start', undefined, 'end']);
+assert.equal(removedMiddleBlend.r[1].role, 'interior');
+assert.equal(removedMiddleBlend.r[1].source, 'derived');
+
+const unevenPointBlend = blendCurves(
+  {
+    r: [
+      { ...migrated[0], time: 0 },
+      { ...migrated[1], id: 'new-left-point', time: 0.25, value: 0.25 },
+      { ...migrated[1], id: 'shared-middle', time: 0.5, value: 0.8 },
+      { ...migrated[2], time: 1 }
+    ],
+    g: migrated,
+    b: migrated,
+    a: migrated
+  },
+  {
+    r: [
+      { ...migrated[0], time: 0 },
+      { ...migrated[1], id: 'shared-middle', time: 0.5, value: 0.8 },
+      { ...migrated[2], time: 1 }
+    ],
+    g: migrated,
+    b: migrated,
+    a: migrated
+  },
+  0.5,
+  'cubic'
+);
+assert.equal(unevenPointBlend.r.length, 4);
+assert.deepEqual(unevenPointBlend.r.map(point => point.id.includes('shared-middle')), [false, false, true, false]);
+assert.equal(unevenPointBlend.r[1].id, 'new-left-point');
+assert.equal(unevenPointBlend.r[1].role, 'interior');
+assert.equal(unevenPointBlend.r[2].time, 0.5);
+assert.equal(unevenPointBlend.r[2].value, 0.8);
+
+const materializedUnevenBlend = materializeColorCurveForAuthoring(unevenPointBlend);
+assert.equal(materializedUnevenBlend.r[1].id, 'new-left-point');
+assert.equal(materializedUnevenBlend.r[1].source, 'authored');
+assert.equal(materializedUnevenBlend.r[1].edit, 'free');
+assert.equal(materializedUnevenBlend.r.some(point => point.id.startsWith('derived_')), false);
+assert.equal(materializedUnevenBlend.r.some(point => point.id.startsWith('sample_')), false);
+
 assert.deepEqual(
   clampPointMove({ ...migrated[1], constraints: { pinnedTime: true } }, { time: 0.75, value: 1.2 }),
   { time: 0.5, value: 1.2 }
@@ -161,6 +258,23 @@ const testCurve = {
   b: migrateKeyframesToCurvePoints([{ time: 0, value: 0 }, { time: 1, value: 1 }]),
   a: migrateKeyframesToCurvePoints([{ time: 0, value: 1 }, { time: 1, value: 1 }])
 };
+const exactAnchorCurve = {
+  r: [
+    { ...migrated[0], time: 0 },
+    { ...migrated[2], time: 1 }
+  ],
+  g: migrated,
+  b: migrated,
+  a: migrated
+};
+assert.strictEqual(
+  blendSpaceCurves([
+    { position: 0, curve: testCurve },
+    { position: 0.5, curve: exactAnchorCurve },
+    { position: 1, curve: testCurve }
+  ], 0.5, 'cubic'),
+  exactAnchorCurve
+);
 const selection = { channel: 'r' as const, pointId: migrated[1].id };
 const updatedCurve = patchCurvePoint(testCurve, selection, point => ({ ...point, outInterpolation: 'linear' }));
 assert.equal(updatedCurve.r[1].outInterpolation, 'linear');
