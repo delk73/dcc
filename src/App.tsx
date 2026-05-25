@@ -2,6 +2,7 @@ import React, { useReducer, useState, useEffect, useMemo, useRef } from 'react';
 import { get, set } from 'idb-keyval';
 import { ColorCurve, Channel, CurvePoint, LibraryCurve } from './types';
 import { CurveEditor } from './components/CurveEditor';
+import { CurveImportPanel } from './components/CurveImportPanel';
 import { CurvePreview } from './components/CurvePreview';
 import { PointInspector } from './components/PointInspector';
 import { Layers, RotateCcw, Settings2 } from 'lucide-react';
@@ -193,6 +194,19 @@ export default function App() {
 
   const updateActiveCurve = (newCurve: ColorCurve) => {
     dispatch({ type: 'edit-active-curve', curve: newCurve, newAnchorId: crypto.randomUUID() });
+  };
+
+  const importCurve = (importedCurve: ColorCurve) => {
+    const channels: Channel[] = ['r', 'g', 'b', 'a'];
+    const mergedCurve = channels.reduce((nextCurve, channel) => ({
+      ...nextCurve,
+      [channel]: importedCurve[channel].length > 0
+        ? importedCurve[channel]
+        : activeSpaceCurve[channel]
+    }), activeSpaceCurve);
+
+    dispatch({ type: 'clear-point-selection' });
+    updateActiveCurve(mergedCurve);
   };
 
   const selectedCurvePoint = useMemo(
@@ -538,7 +552,10 @@ export default function App() {
               </div>
 
                 {renderCurveEditorPanel()}
-                {renderEditFilter()}
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(340px,420px)] gap-4">
+                  {renderEditFilter()}
+                  <CurveImportPanel onImport={importCurve} />
+                </div>
                 {renderSpaceContinuum()}
 
             </div>
@@ -555,7 +572,10 @@ export default function App() {
                         canExportAtlas={normalizedCategoryCurves.length > 1}
                     />
                     {renderCurveEditorPanel()}
-                    {renderEditFilter()}
+                    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(340px,420px)] gap-4">
+                      {renderEditFilter()}
+                      <CurveImportPanel onImport={importCurve} />
+                    </div>
                     {renderSpaceContinuum()}
                 </div>
             )}

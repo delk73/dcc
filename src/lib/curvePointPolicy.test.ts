@@ -27,6 +27,7 @@ import {
   toTimeKey
 } from './curvePointPolicy';
 import { blendCurves, blendSpaceCurves, computeTangents, evaluateCurve } from './curveUtils';
+import { parseCurveImportText } from './curveImport';
 import { CurvePoint } from '../types';
 import { createInitialEditorState, serializeUxState } from '../state/editorState';
 
@@ -342,5 +343,37 @@ const serializedUx = serializeUxState({
   selectedPoint: selection
 });
 assert.equal('selectedPoint' in serializedUx, false);
+
+const unrealImport = parseCurveImportText(`
+Begin Object Class=/Script/CurveEditor.CurveEditorCopyBuffer Name="CurveEditorCopyBuffer_0"
+   Begin Object Class=/Script/CurveEditor.CurveEditorCopyableCurveKeys Name="CurveEditorCopyableCurveKeys_0"
+      KeyPositions(0)=(InputValue=0.250000,OutputValue=0.500000)
+      KeyPositions(1)=(InputValue=1.004373,OutputValue=0.750000)
+      ShortDisplayName="R"
+   End Object
+   Begin Object Class=/Script/CurveEditor.CurveEditorCopyableCurveKeys Name="CurveEditorCopyableCurveKeys_1"
+      KeyPositions(0)=(OutputValue=-0.100000)
+      KeyPositions(1)=(InputValue=0.504373,OutputValue=0.300000)
+      ShortDisplayName="A"
+   End Object
+   TimeOffset=-0.004373
+End Object
+`);
+assert.deepEqual(unrealImport.summary.map(item => [item.channel, item.count]), [
+  ['r', 2],
+  ['g', 0],
+  ['b', 0],
+  ['a', 2]
+]);
+assert.equal(unrealImport.curve.r[0].source, 'imported');
+assert.equal(unrealImport.curve.r[0].role, 'boundary');
+assert.equal(getEdgeOwner(unrealImport.curve.r[0]), 'start');
+assert.equal(unrealImport.curve.r[1].time, 1);
+assert.equal(unrealImport.curve.a[0].time, 0);
+assert.equal(unrealImport.curve.a[0].value, -0.1);
+
+const looseImport = parseCurveImportText('0,0 0.5,1 1,0');
+assert.deepEqual(looseImport.summary.map(item => item.count), [3, 0, 0, 0]);
+assert.equal(looseImport.curve.r[1].time, 0.5);
 
 console.log('curvePointPolicy tests passed');
