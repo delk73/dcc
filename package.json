@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "tsx src/lib/curvePointPolicy.test.ts"
+    "test": "tsx src/lib/curvePointPolicy.test.ts && tsx src/lib/curveViewport.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
