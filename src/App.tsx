@@ -17,6 +17,7 @@ import {
   sortAnchors
 } from './lib/spaceUtils';
 import { insertTextChunk } from './lib/pngUtils';
+import { createId } from './lib/idUtils';
 import {
   convertPointToAuthored,
   findCurvePoint,
@@ -42,7 +43,7 @@ const initialCurve: ColorCurve = {
 };
 
 const createMinimalBasicSpace = (): LibraryCurve[] => [{
-  id: crypto.randomUUID(),
+  id: createId('anchor'),
   name: 'Default Sweep',
   category: 'Basic',
   position: 0,
@@ -193,7 +194,7 @@ export default function App() {
     : initialCurve;
 
   const updateActiveCurve = (newCurve: ColorCurve) => {
-    dispatch({ type: 'edit-active-curve', curve: newCurve, newAnchorId: crypto.randomUUID() });
+    dispatch({ type: 'edit-active-curve', curve: newCurve, newAnchorId: createId('anchor') });
   };
 
   const importCurve = (importedCurve: ColorCurve) => {

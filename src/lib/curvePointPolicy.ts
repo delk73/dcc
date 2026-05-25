@@ -1,4 +1,5 @@
 import * as types from '../types';
+import { createId } from './idUtils';
 
 export type CurveValidationIssue = {
   severity: 'error' | 'warning';
@@ -33,7 +34,7 @@ export function createStablePointId(keyframe: types.Keyframe, index: number): st
   return `point_${index}_t${toTimeKey(keyframe.time)}_${stableNumberPart(keyframe.value)}`;
 }
 
-export function createAuthoredInteriorPoint(time: number, value: number, id: string = crypto.randomUUID()): types.CurvePoint {
+export function createAuthoredInteriorPoint(time: number, value: number, id: string = createId('point')): types.CurvePoint {
   return {
     id,
     time,

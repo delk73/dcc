@@ -92,6 +92,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   onSelectedPointChange,
   interpMode
 }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [draggingPoint, setDraggingPoint] = useState<{ channel: Channel, pointId: string } | null>(null);
   const [localCurve, setLocalCurve] = useState<ColorCurve>(curve);
@@ -120,6 +121,31 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
       }
     };
   }, []);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleNativeWheel = (event: WheelEvent) => {
+      if (!container.contains(event.target as Node)) return;
+      event.preventDefault();
+
+      const point = getSvgPoint(event.clientX, event.clientY);
+      if (!point || event.deltaY === 0) return;
+
+      const anchor = {
+        time: xToTime(point.x, viewportRef.current, PLOT_RECT),
+        value: viewportRef.current.valueMin + ((PLOT_RECT.bottom - point.y) / PLOT_RECT.height) * (viewportRef.current.valueMax - viewportRef.current.valueMin)
+      };
+      const scale = Math.exp(event.deltaY * WHEEL_ZOOM_INTENSITY);
+      const zoomX = event.altKey ? 1 : scale;
+      const zoomY = event.shiftKey ? 1 : scale;
+      applyZoom(zoomX, zoomY, anchor);
+    };
+
+    container.addEventListener('wheel', handleNativeWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleNativeWheel);
+  });
 
   const scheduleViewport = (nextViewport: CurveViewport) => {
     const clamped = clampViewport(nextViewport);
@@ -408,21 +434,6 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     onChange(newCurve);
   };
 
-  const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
-    const point = getSvgPoint(e.clientX, e.clientY);
-    if (!point) return;
-
-    e.preventDefault();
-    const anchor = {
-      time: xToTime(point.x, viewportRef.current, PLOT_RECT),
-      value: viewportRef.current.valueMin + ((PLOT_RECT.bottom - point.y) / PLOT_RECT.height) * (viewportRef.current.valueMax - viewportRef.current.valueMin)
-    };
-    const scale = Math.exp(e.deltaY * WHEEL_ZOOM_INTENSITY);
-    const zoomX = e.altKey ? 1 : scale;
-    const zoomY = e.shiftKey ? 1 : scale;
-    applyZoom(zoomX, zoomY, anchor);
-  };
-
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.code !== 'Space') return;
     e.preventDefault();
@@ -663,6 +674,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
 
   return (
     <div
+      ref={containerRef}
       className="w-full aspect-[2/1] relative select-none rounded-xl bg-[#09090b] border border-zinc-800 overflow-hidden shadow-2xl outline-none"
       tabIndex={0}
       onKeyDown={handleKeyDown}
@@ -682,7 +694,6 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
         onPointerCancel={handlePointerUp}
-        onWheel={handleWheel}
         onDoubleClick={handleSvgDoubleClick}
       >
         {drawGrid()}
