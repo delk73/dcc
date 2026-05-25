@@ -9,11 +9,22 @@ interface CurvePreviewProps {
   interpMode: InterpMode;
   textureData?: ImageData | null;
   sampleY?: number;
+  variant?: 'standard' | 'compact' | 'slice';
+  className?: string;
 }
 
-export const CurvePreview: React.FC<CurvePreviewProps> = ({ curve, interpMode, textureData, sampleY = 0 }) => {
+export const CurvePreview: React.FC<CurvePreviewProps> = ({
+  curve,
+  interpMode,
+  textureData,
+  sampleY = 0,
+  variant = 'standard',
+  className
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [channels, setChannels] = useState({ r: true, g: true, b: true, a: true });
+  const isCompact = variant !== 'standard';
+  const isSlice = variant === 'slice';
 
   const handleDownloadPreview = () => {
     const canvas = canvasRef.current;
@@ -98,10 +109,16 @@ export const CurvePreview: React.FC<CurvePreviewProps> = ({ curve, interpMode, t
   }, [curve, interpMode, textureData, sampleY, channels]);
 
   return (
-    <div className="flex flex-col gap-4 bg-[#09090b] border border-zinc-800 rounded-xl p-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-zinc-100 font-bold text-[11px] tracking-widest uppercase">PREVIEW <span className="text-zinc-500 font-normal normal-case tracking-normal">(Output)</span></h3>
-        <div className="flex gap-3 items-center">
+    <div className={cn(
+      "flex flex-col bg-[#09090b] border border-zinc-800 rounded-xl",
+      isCompact ? "gap-2 p-3" : "gap-4 p-6",
+      className
+    )}>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-zinc-100 font-bold text-[11px] tracking-widest uppercase">
+          {isSlice ? 'CURRENT 1D SLICE' : 'PREVIEW'} <span className="text-zinc-500 font-normal normal-case tracking-normal">(Output)</span>
+        </h3>
+        <div className={cn("flex items-center", isCompact ? "gap-2" : "gap-3")}>
              <button
                 onClick={handleDownloadPreview}
                 className="flex items-center gap-1.5 px-2 py-1 rounded border border-zinc-800 text-[10px] uppercase tracking-wider text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
@@ -109,17 +126,24 @@ export const CurvePreview: React.FC<CurvePreviewProps> = ({ curve, interpMode, t
                 <Download className="w-3.5 h-3.5" />
                 PNG
              </button>
-             <button className="text-zinc-500 hover:text-zinc-300">
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path></svg>
-             </button>
-             <button className="text-zinc-500 hover:text-zinc-300">
-                <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
-             </button>
+             {!isCompact && (
+              <>
+               <button className="text-zinc-500 hover:text-zinc-300">
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path></svg>
+               </button>
+               <button className="text-zinc-500 hover:text-zinc-300">
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path></svg>
+               </button>
+              </>
+             )}
         </div>
       </div>
       
-      <div className="flex items-start justify-between gap-6">
-          <div className="flex flex-col gap-3">
+      <div className={cn(
+        "flex justify-between min-w-0",
+        isCompact ? "items-center gap-3" : "items-start gap-6"
+      )}>
+          <div className={cn("flex flex-col", isCompact ? "gap-2 shrink-0" : "gap-3")}>
               <div className="flex gap-2">
                   <label className="flex items-center gap-2 border border-zinc-800 rounded px-2 py-1 bg-black cursor-pointer">
                       <input type="checkbox" checked={channels.r} onChange={e => setChannels(p => ({...p, r: e.target.checked}))} className="accent-red-500 rounded-sm" />
@@ -138,7 +162,7 @@ export const CurvePreview: React.FC<CurvePreviewProps> = ({ curve, interpMode, t
                       <span className="text-xs text-zinc-400 font-bold">A</span>
                   </label>
               </div>
-              <p className="text-[10px] text-zinc-500 mt-2 tracking-wide font-mono">
+              <p className={cn("text-[10px] text-zinc-500 tracking-wide font-mono", isCompact && "hidden xl:block")}>
                   Previewing: 
                   <span className={cn("ml-2", channels.r ? "text-red-500" : "opacity-30")}>R</span>
                   <span className={cn("ml-1", channels.g ? "text-green-500" : "opacity-30")}>G</span>
@@ -147,7 +171,10 @@ export const CurvePreview: React.FC<CurvePreviewProps> = ({ curve, interpMode, t
               </p>
           </div>
 
-          <div className="flex-1 relative h-20 rounded-lg overflow-hidden border border-zinc-700" 
+          <div className={cn(
+            "flex-1 min-w-0 relative rounded-lg overflow-hidden border border-zinc-700",
+            isSlice ? "h-12" : isCompact ? "h-14" : "h-20"
+          )}
              style={{
                   backgroundColor: '#09090b',
                   backgroundImage: `
@@ -163,6 +190,7 @@ export const CurvePreview: React.FC<CurvePreviewProps> = ({ curve, interpMode, t
                   width={256} 
                   height={1} 
                   className="w-full h-full object-fill absolute inset-0"
+                  style={{ imageRendering: 'pixelated' }}
               />
           </div>
       </div>

@@ -37,6 +37,7 @@ interface CurveEditorProps {
   onActiveChannelChange: (channel: Channel) => void;
   onSelectedPointChange: (selection: SelectedPointRef | null) => void;
   interpMode: InterpMode;
+  className?: string;
 }
 
 const WIDTH = 1000;
@@ -90,7 +91,8 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   selectedPoint,
   onActiveChannelChange,
   onSelectedPointChange,
-  interpMode
+  interpMode,
+  className
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -675,7 +677,10 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   return (
     <div
       ref={containerRef}
-      className="w-full aspect-[2/1] relative select-none rounded-xl bg-[#09090b] border border-zinc-800 overflow-hidden shadow-2xl outline-none"
+      className={cn(
+        "w-full min-h-[200px] relative select-none rounded-xl bg-[#09090b] border border-zinc-800 overflow-hidden shadow-2xl outline-none",
+        className ?? "aspect-[2/1]"
+      )}
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onKeyUp={handleKeyUp}

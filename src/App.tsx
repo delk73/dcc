@@ -360,9 +360,9 @@ export default function App() {
     dispatch({ type: 'toggle-edit-channel', channel });
   };
 
-  const renderCurveEditorPanel = () => (
-    <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-6 pb-2 space-y-4">
-       <div className="space-y-3">
+  const renderCurveEditorPanel = (className = '', editorClassName = '') => (
+    <div className={cn("bg-[#09090b] border border-zinc-800 rounded-xl p-4 space-y-3 min-h-0 flex flex-col", className)}>
+       <div className="space-y-2 shrink-0">
            <h3 className="text-[11px] uppercase tracking-widest font-bold text-zinc-300">Curve Editor</h3>
            <PointInspector
               point={selectedCurvePoint}
@@ -385,13 +385,14 @@ export default function App() {
             ? dispatch({ type: 'select-point', selection })
             : dispatch({ type: 'clear-point-selection' })}
           interpMode={interpMode}
+          className={editorClassName}
        />
     </div>
   );
 
-  const renderEditFilter = () => (
-    <div className="grid grid-cols-1 gap-4">
-        <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-4 flex flex-col gap-3">
+  const renderEditFilter = (className = '') => (
+    <div className={cn("grid grid-cols-1 gap-4 min-w-0", className)}>
+        <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-3 flex flex-col gap-2">
             <h3 className="text-[10px] uppercase tracking-wider font-bold text-zinc-400 border-b border-zinc-800 pb-2">Edit Filter <span className="font-normal normal-case text-zinc-600">(Affects which channels you edit)</span></h3>
             <div className="flex gap-2">
                  {channelInfo.map((ci) => (
@@ -417,15 +418,15 @@ export default function App() {
     </div>
   );
 
-  const renderSpaceContinuum = () => (
-    <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-6 flex flex-col gap-6">
+  const renderSpaceContinuum = (className = '') => (
+    <div className={cn("bg-[#09090b] border border-zinc-800 rounded-xl p-4 flex flex-col gap-4", className)}>
         <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
                 <h3 className="text-xs uppercase tracking-wider font-bold text-zinc-300">Space Continuum <span className="text-zinc-600 font-normal normal-case">(1D)</span></h3>
             </div>
         </div>
         
-        <div ref={continuumTrackRef} className="relative pt-6 pb-8 mx-4">
+        <div ref={continuumTrackRef} className="relative pt-5 pb-7 mx-4">
              <div className="absolute top-1/2 -mt-1 left-0 right-0 h-2 rounded-full overflow-hidden opacity-50" style={{ background: categoryGradient }} />
              
              <div className="absolute top-full text-[10px] text-zinc-500 font-mono w-full flex justify-between mt-2 px-1">
@@ -487,117 +488,115 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen select-none bg-black text-zinc-100 font-sans selection:bg-indigo-500/30">
-      <div className="max-w-[1400px] mx-auto p-4 sm:p-8 space-y-8">
-        
-        {/* Top Navbar */}
-        <header className="flex items-center gap-6 pb-6 border-b border-white/5">
-          <h1 className="text-xl font-bold tracking-tight text-white mr-4">Curve Composer</h1>
-          
-          <div className="flex bg-black border border-zinc-800 rounded-lg p-1 overflow-hidden">
-             <button 
-                onClick={() => dispatch({ type: 'set-main-view', mainView: 'curve' })}
-                className={cn("px-5 py-2 text-sm font-medium transition-colors", mainView === 'curve' ? 'bg-[#1a1c2e] text-indigo-400' : 'text-zinc-400 hover:text-zinc-200')}
-             >
-                1D Curve
-             </button>
-             <button 
-                onClick={() => dispatch({ type: 'set-main-view', mainView: '2d' })}
-                className={cn("px-5 py-2 text-sm font-medium transition-colors border-l border-zinc-800", mainView === '2d' ? 'bg-[#1a1c2e] text-indigo-400' : 'text-zinc-400 hover:text-zinc-200')}
-             >
-                2D Atlas
-             </button>
-             <button 
-                onClick={() => dispatch({ type: 'set-main-view', mainView: '3d' })}
-                className={cn("px-5 py-2 text-sm font-medium transition-colors border-l border-zinc-800", mainView === '3d' ? 'bg-[#1a1c2e] text-indigo-400' : 'text-zinc-400 hover:text-zinc-200')}
-             >
-                3D Volume
-             </button>
-          </div>
+    <div className="h-screen overflow-hidden select-none bg-black text-zinc-100 font-sans selection:bg-indigo-500/30 flex flex-col">
+      <header className="shrink-0 flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5 border-b border-white/5">
+        <h1 className="text-lg font-bold tracking-tight text-white mr-2">Curve Composer</h1>
 
-          <div className="flex items-center gap-4 ml-auto">
-             <button
-                onClick={resetToMinimalBasicSpace}
-                className="text-zinc-500 hover:text-zinc-300"
-                title="Reset space to minimal basic representation"
-                aria-label="Reset space to minimal basic representation"
-             >
-                 <RotateCcw className="w-5 h-5" />
-             </button>
-             <button className="text-zinc-500 hover:text-zinc-300">
-                 <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 7v6h-6"></path><path d="M3 17a9 9 0 019-9 9 9 0 016 2.3l3 2.7"></path></svg>
-             </button>
-             <button className="text-zinc-500 hover:text-zinc-300 border border-zinc-800 bg-[#09090b] rounded p-2">
-                 <Settings2 className="w-5 h-5" />
-             </button>
-          </div>
-        </header>
-
-        <div className="grid grid-cols-1 gap-8 items-start">
-            
-          {/* Main Area (Editor + Generate) */}
-          <div className={cn("space-y-8", "min-w-0")}>
-            
-
-
-
-            {mainView === 'curve' && (
-              <div className="flex flex-col gap-8">
-              <div className="grid grid-cols-1 gap-8">
-                  <CurvePreview 
-                      curve={activeSpaceCurve} 
-                      interpMode={interpMode} 
-                      textureData={atlasTexture}
-                      sampleY={spaceLever}
-                  />
-              </div>
-
-                {renderCurveEditorPanel()}
-                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(340px,420px)] gap-4">
-                  {renderEditFilter()}
-                  <CurveImportPanel onImport={importCurve} />
-                </div>
-                {renderSpaceContinuum()}
-
-            </div>
-            )}
-            
-            {mainView === '2d' && (
-                <div className="flex flex-col gap-8">
-                    <AtlasViewer 
-                        curves={spaceCurves} 
-                        interpMode={interpMode} 
-                        spaceLever={spaceLever} 
-                        onTextureUpdate={setAtlasTexture}
-                        onExportAtlas={handleExportLibraryLUT}
-                        canExportAtlas={normalizedCategoryCurves.length > 1}
-                    />
-                    {renderCurveEditorPanel()}
-                    <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(340px,420px)] gap-4">
-                      {renderEditFilter()}
-                      <CurveImportPanel onImport={importCurve} />
-                    </div>
-                    {renderSpaceContinuum()}
-                </div>
-            )}
-
-            {mainView === '3d' && (
-                <div className="flex flex-col items-center justify-center p-12 text-zinc-500 border border-zinc-800 border-dashed rounded-xl h-96 bg-zinc-900/50">
-                   <Layers className="w-12 h-12 mb-4 opacity-30" />
-                   <h3 className="text-xl font-medium text-zinc-300">3D Volume Generation</h3>
-                   <p className="text-sm mt-3 max-w-md text-center leading-relaxed">
-                     Generate entire sets of variant spaces to build a fully procedural Volume texture (3D LUT). 
-                     This feature evaluates batch matrices seamlessly mapping along an additional Z-axis dimension.
-                   </p>
-                   <button className="px-4 py-2 mt-6 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-md text-sm border border-zinc-700 transition-colors pointer-events-none opacity-50">
-                     Under Construction
-                   </button>
-                </div>
-            )}
-          </div>
+        <div className="flex bg-black border border-zinc-800 rounded-lg p-1 overflow-hidden">
+          <button
+            onClick={() => dispatch({ type: 'set-main-view', mainView: 'curve' })}
+            className={cn("px-4 py-1.5 text-sm font-medium transition-colors", mainView === 'curve' ? 'bg-[#1a1c2e] text-indigo-400' : 'text-zinc-400 hover:text-zinc-200')}
+          >
+            1D Curve
+          </button>
+          <button
+            onClick={() => dispatch({ type: 'set-main-view', mainView: '2d' })}
+            className={cn("px-4 py-1.5 text-sm font-medium transition-colors border-l border-zinc-800", mainView === '2d' ? 'bg-[#1a1c2e] text-indigo-400' : 'text-zinc-400 hover:text-zinc-200')}
+          >
+            2D Atlas
+          </button>
+          <button
+            onClick={() => dispatch({ type: 'set-main-view', mainView: '3d' })}
+            className={cn("px-4 py-1.5 text-sm font-medium transition-colors border-l border-zinc-800", mainView === '3d' ? 'bg-[#1a1c2e] text-indigo-400' : 'text-zinc-400 hover:text-zinc-200')}
+          >
+            3D Volume
+          </button>
         </div>
 
-      </div>
+        <div className="flex items-center gap-3 ml-auto">
+          <button
+            onClick={resetToMinimalBasicSpace}
+            className="text-zinc-500 hover:text-zinc-300"
+            title="Reset space to minimal basic representation"
+            aria-label="Reset space to minimal basic representation"
+          >
+            <RotateCcw className="w-5 h-5" />
+          </button>
+          <button className="text-zinc-500 hover:text-zinc-300" aria-label="Refresh">
+            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 7v6h-6"></path><path d="M3 17a9 9 0 019-9 9 9 0 016 2.3l3 2.7"></path></svg>
+          </button>
+          <button className="text-zinc-500 hover:text-zinc-300 border border-zinc-800 bg-[#09090b] rounded p-2" aria-label="Settings">
+            <Settings2 className="w-5 h-5" />
+          </button>
+        </div>
+      </header>
+
+      <main className="flex-1 min-h-0 overflow-hidden">
+        <div className="h-full max-w-[1800px] mx-auto p-3 sm:p-4 min-h-0">
+          {mainView === 'curve' && (
+            <div className="h-full min-h-0 grid grid-rows-[auto_minmax(240px,1fr)_auto_auto] gap-3 overflow-y-auto xl:overflow-hidden">
+              <CurvePreview
+                curve={activeSpaceCurve}
+                interpMode={interpMode}
+                textureData={atlasTexture}
+                sampleY={spaceLever}
+                variant="compact"
+                className="shrink-0"
+              />
+
+              {renderCurveEditorPanel("min-h-[260px] xl:min-h-0", "h-[clamp(260px,46vh,620px)] xl:h-auto xl:flex-1")}
+
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] gap-3 min-w-0">
+                {renderEditFilter()}
+                <CurveImportPanel onImport={importCurve} />
+              </div>
+              {renderSpaceContinuum()}
+            </div>
+          )}
+
+          {mainView === '2d' && (
+            <div className="h-full min-h-0 grid grid-rows-[minmax(220px,1.25fr)_auto_minmax(220px,1fr)_auto_auto] gap-3 overflow-y-auto 2xl:overflow-hidden">
+              <AtlasViewer
+                curves={spaceCurves}
+                interpMode={interpMode}
+                spaceLever={spaceLever}
+                onTextureUpdate={setAtlasTexture}
+                onExportAtlas={handleExportLibraryLUT}
+                canExportAtlas={normalizedCategoryCurves.length > 1}
+                className="min-h-[220px]"
+                canvasClassName="h-full"
+              />
+              <CurvePreview
+                curve={activeSpaceCurve}
+                interpMode={interpMode}
+                textureData={atlasTexture}
+                sampleY={spaceLever}
+                variant="slice"
+              />
+              {renderCurveEditorPanel("min-h-[220px]", "h-[clamp(220px,34vh,460px)] 2xl:h-auto 2xl:flex-1")}
+              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] gap-3 min-w-0">
+                {renderEditFilter()}
+                <CurveImportPanel onImport={importCurve} />
+              </div>
+              {renderSpaceContinuum()}
+            </div>
+          )}
+
+          {mainView === '3d' && (
+            <div className="h-full min-h-0 flex flex-col items-center justify-center p-8 text-zinc-500 border border-zinc-800 border-dashed rounded-xl bg-zinc-900/50">
+              <Layers className="w-12 h-12 mb-4 opacity-30" />
+              <h3 className="text-xl font-medium text-zinc-300">3D Volume Generation</h3>
+              <p className="text-sm mt-3 max-w-md text-center leading-relaxed">
+                Generate entire sets of variant spaces to build a fully procedural Volume texture (3D LUT).
+                This feature evaluates batch matrices seamlessly mapping along an additional Z-axis dimension.
+              </p>
+              <button className="px-4 py-2 mt-6 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-md text-sm border border-zinc-700 transition-colors pointer-events-none opacity-50">
+                Under Construction
+              </button>
+            </div>
+          )}
+        </div>
+      </main>
     </div>
   );
 }

@@ -10,9 +10,20 @@ interface AtlasViewerProps {
   onTextureUpdate?: (tex: ImageData) => void;
   onExportAtlas?: () => void;
   canExportAtlas?: boolean;
+  className?: string;
+  canvasClassName?: string;
 }
 
-export const AtlasViewer: React.FC<AtlasViewerProps> = ({ curves, interpMode, spaceLever, onTextureUpdate, onExportAtlas, canExportAtlas = true }) => {
+export const AtlasViewer: React.FC<AtlasViewerProps> = ({
+  curves,
+  interpMode,
+  spaceLever,
+  onTextureUpdate,
+  onExportAtlas,
+  canExportAtlas = true,
+  className = '',
+  canvasClassName = ''
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const deferredCurves = React.useDeferredValue(curves);
@@ -107,8 +118,8 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({ curves, interpMode, sp
   }, [deferredCurves, interpMode, onTextureUpdate]);
 
   return (
-      <div className="flex flex-col gap-4 bg-[#09090b] border border-zinc-800 rounded-xl p-6">
-        <div className="flex items-center justify-between mb-2">
+      <div className={`flex flex-col gap-3 bg-[#09090b] border border-zinc-800 rounded-xl p-4 min-h-0 ${className}`}>
+        <div className="flex items-center justify-between">
           <h3 className="text-zinc-100 font-bold text-[11px] tracking-widest uppercase">2D ATLAS <span className="text-zinc-500 font-normal normal-case tracking-normal">(Output)</span></h3>
           {onExportAtlas && (
             <button
@@ -122,8 +133,8 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({ curves, interpMode, sp
           )}
         </div>
         
-        <div className="w-full transition-all duration-300">
-            <div className="flex gap-6 items-stretch">
+        <div className="w-full min-h-0 flex-1 transition-all duration-300">
+            <div className="flex gap-4 items-stretch h-full min-h-0">
               <div className="flex flex-col justify-between py-2 text-[10px] text-zinc-500 font-mono tracking-wider">
                   <span>1.0</span>
                   <span className="rotate-[-90deg] whitespace-nowrap">SPACE</span>
@@ -131,7 +142,7 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({ curves, interpMode, sp
               </div>
 
               <div 
-                className="flex-1 relative aspect-[2/1] min-h-80 rounded-lg overflow-hidden border border-zinc-800 shadow-inner touch-none"
+                className={`flex-1 relative min-h-[200px] rounded-lg overflow-hidden border border-zinc-800 shadow-inner touch-none ${canvasClassName || 'aspect-[2/1]'}`}
             style={{
               backgroundColor: '#09090b',
               backgroundImage: `
