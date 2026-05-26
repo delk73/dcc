@@ -8,8 +8,12 @@ interface AtlasViewerProps {
   interpMode: InterpMode;
   spaceLever: number;
   domainTime: number;
+  activeAnchorId?: string;
   onSpaceLeverChange?: (position: number) => void;
   onDomainTimeChange?: (position: number) => void;
+  onAnchorDragStart?: (anchorId: string) => void;
+  onAnchorPositionChange?: (anchorId: string, position: number) => void;
+  onAnchorDragEnd?: () => void;
   onTextureUpdate?: (tex: ImageData) => void;
   onExportAtlas?: () => void;
   canExportAtlas?: boolean;
@@ -22,8 +26,12 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
   interpMode,
   spaceLever,
   domainTime,
+  activeAnchorId,
   onSpaceLeverChange,
   onDomainTimeChange,
+  onAnchorDragStart,
+  onAnchorPositionChange,
+  onAnchorDragEnd,
   onTextureUpdate,
   onExportAtlas,
   canExportAtlas = true,
@@ -70,6 +78,34 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
+  };
+
+  const getSpacePositionFromClientY = (clientY: number) => {
+    const rect = atlasFrameRef.current?.getBoundingClientRect();
+    if (!rect || rect.height === 0) return spaceLever;
+    return Math.max(0, Math.min(1, 1 - ((clientY - rect.top) / rect.height)));
+  };
+
+  const handleAnchorPointerDown = (event: React.PointerEvent<HTMLButtonElement>, anchorId: string) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onAnchorDragStart?.(anchorId);
+    onAnchorPositionChange?.(anchorId, getSpacePositionFromClientY(event.clientY));
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleAnchorPointerMove = (event: React.PointerEvent<HTMLButtonElement>, anchorId: string) => {
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    event.preventDefault();
+    onAnchorPositionChange?.(anchorId, getSpacePositionFromClientY(event.clientY));
+  };
+
+  const handleAnchorPointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    onAnchorDragEnd?.();
   };
 
   useEffect(() => {
@@ -181,7 +217,7 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
             <div className="flex gap-4 items-stretch h-full min-h-0">
               <div className="flex flex-col justify-between py-2 text-[10px] text-zinc-500 font-mono tracking-wider">
                   <span>1.0</span>
-                  <span className="rotate-[-90deg] whitespace-nowrap">SPACE</span>
+                  <span className="rotate-[-90deg] whitespace-nowrap">Y SPACE</span>
                   <span>0.0</span>
               </div>
 
@@ -239,6 +275,30 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
               className="absolute left-0 right-0 h-px bg-white/80 shadow-[0_0_6px_rgba(255,255,255,0.65)] pointer-events-none"
               style={{ top: `${(1 - spaceLever) * 100}%` }}
             />
+            {curves.map((curve, index) => {
+              const isActive = curve.id === activeAnchorId;
+
+              return (
+                <button
+                  key={curve.id}
+                  type="button"
+                  aria-label={`Move space keyframe ${index + 1}`}
+                  title={`Space keyframe ${index + 1}: ${curve.position.toFixed(3)}`}
+                  className={`absolute left-1 z-20 h-5 w-5 -translate-y-1/2 rounded-full border bg-black shadow-lg transition-transform ${
+                    isActive
+                      ? 'scale-125 border-white text-white'
+                      : 'border-zinc-500 text-zinc-300 hover:border-white hover:text-white'
+                  }`}
+                  style={{ top: `${(1 - curve.position) * 100}%` }}
+                  onPointerDown={(event) => handleAnchorPointerDown(event, curve.id)}
+                  onPointerMove={(event) => handleAnchorPointerMove(event, curve.id)}
+                  onPointerUp={handleAnchorPointerUp}
+                  onPointerCancel={handleAnchorPointerUp}
+                >
+                  <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />
+                </button>
+              );
+            })}
             <div
               className="absolute bottom-0 top-0 w-px bg-white/80 shadow-[0_0_6px_rgba(255,255,255,0.65)] pointer-events-none"
               style={{ left: `${domainTime * 100}%` }}

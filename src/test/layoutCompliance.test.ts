@@ -55,12 +55,16 @@ function executeComplianceSuite() {
   }
   console.log('-> [PASS] Rule 1.4 / 2.3: Left channel boundary geometry invariance validated.');
 
-  if (portraitLayout.spaceSlider.width !== portraitWidth) {
+  if (
+    wideLayout.spaceSlider.height !== SPEC_CONSTRAINTS.SLIDER_HEIGHT ||
+    portraitLayout.spaceSlider.height !== SPEC_CONSTRAINTS.SLIDER_HEIGHT ||
+    SPEC_CONSTRAINTS.SLIDER_HEIGHT !== 0
+  ) {
     throw new Error(
-      'FAIL [Rule 2.3]: Portrait space slider failed to claim 100% of horizontal display width.'
+      'FAIL [Rule 1.3]: Detached footer space slider must not reserve workspace height.'
     );
   }
-  console.log('-> [PASS] Rule 2.3: Full-width portrait tracking slider confirmed.');
+  console.log('-> [PASS] Rule 1.3: Detached footer space slider collapsed into atlas Y axis.');
 
   console.log('\n====================================================');
   console.log('COMPLIANCE GATE STATUS: ALL RULES PASSED');

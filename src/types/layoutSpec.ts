@@ -8,8 +8,8 @@
  * - [Rule 1.1] Global header controls are limited to non-destructive actions (Export, Reset).
  * - [Rule 1.2] The workspace maintains a persistent dual-engine layout: 1D Curve Editor
  * and 2D Atlas Viewer are visible simultaneously across all display profiles.
- * - [Rule 1.3] High-frequency interactive controls (`SpaceSlider`) remain anchored
- * below index lines to preserve open lines of sight.
+ * - [Rule 1.3] Space keyframe controls live on the 2D Atlas Viewer Y axis; no
+ * detached footer space slider reserves workspace height.
  * - [Rule 1.4] Color channel filters are local to the curve editor controls.
  *
  * ## 2. Aspect Ratio Reflow (Best-Fit Model)
@@ -40,6 +40,6 @@ export interface ComputedLayout {
 export const SPEC_CONSTRAINTS = {
   HEADER_HEIGHT: 40,
   CHANNEL_WIDTH: 0,
-  SLIDER_HEIGHT: 32,
+  SLIDER_HEIGHT: 0,
   ASPECT_BREAKPOINT: 1.0,
 } as const;

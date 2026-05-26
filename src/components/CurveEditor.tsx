@@ -698,13 +698,14 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
           strokeDasharray="6 6"
           opacity="0.75"
         />
-        <circle
-          cx={x}
-          cy={PLOT_RECT.bottom}
-          r="5"
-          fill="#09090b"
+        <line
+          x1={x}
+          y1={PLOT_RECT.bottom + 3}
+          x2={x}
+          y2={PLOT_RECT.bottom + 11}
           stroke="#f8fafc"
-          strokeWidth="2"
+          strokeWidth="1.5"
+          opacity="0.75"
         />
       </g>
     );
