@@ -56,15 +56,14 @@ function executeComplianceSuite() {
   console.log('-> [PASS] Rule 1.4 / 2.3: Left channel boundary geometry invariance validated.');
 
   if (
-    wideLayout.spaceSlider.height !== SPEC_CONSTRAINTS.SLIDER_HEIGHT ||
-    portraitLayout.spaceSlider.height !== SPEC_CONSTRAINTS.SLIDER_HEIGHT ||
-    SPEC_CONSTRAINTS.SLIDER_HEIGHT !== 0
+    wideLayout.atlasViewport.y + wideLayout.atlasViewport.height !== wideHeight ||
+    portraitLayout.atlasViewport.y + portraitLayout.atlasViewport.height !== portraitHeight
   ) {
     throw new Error(
-      'FAIL [Rule 1.3]: Detached footer space slider must not reserve workspace height.'
+      'FAIL [Rule 1.5]: 2D Atlas Viewer must own the bottom status boundary.'
     );
   }
-  console.log('-> [PASS] Rule 1.3: Detached footer space slider collapsed into atlas Y axis.');
+  console.log('-> [PASS] Rule 1.5: Atlas-owned bottom status boundary reserved.');
 
   console.log('\n====================================================');
   console.log('COMPLIANCE GATE STATUS: ALL RULES PASSED');

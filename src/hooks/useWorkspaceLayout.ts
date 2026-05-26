@@ -20,8 +20,7 @@ export function useWorkspaceLayout(windowWidth: number, windowHeight: number): C
   };
 
   const workspaceY = SPEC_CONSTRAINTS.HEADER_HEIGHT;
-  const workspaceHeight =
-    windowHeight - SPEC_CONSTRAINTS.HEADER_HEIGHT - SPEC_CONSTRAINTS.SLIDER_HEIGHT;
+  const workspaceHeight = windowHeight - SPEC_CONSTRAINTS.HEADER_HEIGHT;
 
   // Rule 1.4: Channel controls are local to the curve editor in Rev 2.0.
   const channelStrip: BoundingRect = {
@@ -35,7 +34,6 @@ export function useWorkspaceLayout(windowWidth: number, windowHeight: number): C
 
   let curveEditor: BoundingRect;
   let atlasViewport: BoundingRect;
-  let spaceSlider: BoundingRect;
 
   if (isWidescreen) {
     // Rule 2.1: Widescreen side-by-side column partition.
@@ -55,13 +53,6 @@ export function useWorkspaceLayout(windowWidth: number, windowHeight: number): C
       height: workspaceHeight,
     };
 
-    // Rule 1.3: Tracking slider resides below viewports to prevent occlusion.
-    spaceSlider = {
-      x: SPEC_CONSTRAINTS.CHANNEL_WIDTH,
-      y: workspaceY + workspaceHeight,
-      width: availableWidth,
-      height: SPEC_CONSTRAINTS.SLIDER_HEIGHT,
-    };
   } else {
     // Rule 2.2: Portrait vertical stack. Interactive graph top, read-only atlas below.
     const halfHeight = Math.floor(workspaceHeight / 2);
@@ -80,13 +71,6 @@ export function useWorkspaceLayout(windowWidth: number, windowHeight: number): C
       height: halfHeight,
     };
 
-    // Rule 2.3: Slider claims full display width for maximum horizontal resolution.
-    spaceSlider = {
-      x: 0,
-      y: workspaceY + workspaceHeight,
-      width: windowWidth,
-      height: SPEC_CONSTRAINTS.SLIDER_HEIGHT,
-    };
   }
 
   return {
@@ -96,6 +80,5 @@ export function useWorkspaceLayout(windowWidth: number, windowHeight: number): C
     channelStrip,
     atlasViewport,
     curveEditor,
-    spaceSlider,
   };
 }

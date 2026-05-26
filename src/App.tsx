@@ -372,6 +372,11 @@ export default function App() {
       spaceLever={spaceLever}
       domainTime={atlasDomainTime}
       activeAnchorId={interaction.type === 'dragging-anchor' ? interaction.anchorId : undefined}
+      activeCurveLabel={activeCurveIndexInfo?.label}
+      activeChannelsLabel={(['r', 'g', 'b', 'a'] as Channel[])
+        .filter(channel => editChannels[channel])
+        .map(channel => channel.toUpperCase())
+        .join('') || 'NONE'}
       onSpaceLeverChange={setSpacePosition}
       onDomainTimeChange={setAtlasDomainTimeWithDetent}
       onAnchorDragStart={startAnchorDrag}

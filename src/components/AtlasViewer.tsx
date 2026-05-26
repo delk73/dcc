@@ -9,6 +9,8 @@ interface AtlasViewerProps {
   spaceLever: number;
   domainTime: number;
   activeAnchorId?: string;
+  activeCurveLabel?: string;
+  activeChannelsLabel?: string;
   onSpaceLeverChange?: (position: number) => void;
   onDomainTimeChange?: (position: number) => void;
   onAnchorDragStart?: (anchorId: string) => void;
@@ -27,6 +29,8 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
   spaceLever,
   domainTime,
   activeAnchorId,
+  activeCurveLabel,
+  activeChannelsLabel,
   onSpaceLeverChange,
   onDomainTimeChange,
   onAnchorDragStart,
@@ -319,6 +323,27 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
             )}
           </div>
         </div>
+      </div>
+      <div className="flex h-7 shrink-0 items-center gap-4 border-t border-zinc-900/80 pt-2 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+        <span className="font-bold text-zinc-300">Status</span>
+        <span>
+          X <span className="text-zinc-300">{domainTime.toFixed(3)}</span>
+        </span>
+        <span>
+          Y <span className="text-zinc-300">{spaceLever.toFixed(3)}</span>
+        </span>
+        <span>
+          Curve <span className="text-zinc-300">{activeCurveLabel ?? 'C:0'}</span>
+        </span>
+        <span>
+          Mode <span className="text-zinc-300">{interpMode}</span>
+        </span>
+        <span className="min-w-0 truncate">
+          Channels <span className="text-zinc-300">{activeChannelsLabel ?? 'NONE'}</span>
+        </span>
+        <span className="ml-auto">
+          Space Keys <span className="text-zinc-300">{curves.length}</span>
+        </span>
       </div>
       </div>
   );
