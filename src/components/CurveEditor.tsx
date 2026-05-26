@@ -1071,9 +1071,6 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
                 <Plus className="h-4 w-4" />
               </button>
             </div>
-            <div className="pointer-events-none absolute bottom-3 left-3 font-mono text-[10px] text-zinc-500 drop-shadow-md">
-              Wheel zoom &bull; Double-click add point &bull; Right-click remove point
-            </div>
             <div className="pointer-events-none absolute bottom-3 right-3 font-mono text-[10px] text-zinc-500 drop-shadow-md">
               {cursorValue
                 ? `T ${cursorValue.time.toFixed(3)}  V ${cursorValue.value.toFixed(3)}`
@@ -1206,6 +1203,11 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
             >
               Clear
             </button>
+          </div>
+        )}
+        {!selectedTransformSummary && (
+          <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
+            Drag empty plot to box select · Double-click to add · Right-click point to remove · Wheel to zoom
           </div>
         )}
       </div>
