@@ -56,10 +56,14 @@ type PointInspectorProps = {
   onPatchPoint: (patcher: (point: CurvePoint) => CurvePoint) => void;
   onPatchEditablePoint: (patcher: (point: CurvePoint) => CurvePoint) => void;
   onConvertToAuthored: () => void;
+  dense?: boolean;
 };
 
-const Badge = ({ children }: { children: React.ReactNode }) => (
-  <span className="h-7 inline-flex items-center rounded border border-zinc-800 bg-black px-2 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+const Badge = ({ children, dense = false }: { children: React.ReactNode; dense?: boolean }) => (
+  <span className={cn(
+    "inline-flex items-center rounded border border-zinc-800 bg-black text-[10px] font-bold uppercase tracking-wider text-zinc-400",
+    dense ? "h-6 px-1.5" : "h-7 px-2"
+  )}>
     {children}
   </span>
 );
@@ -68,17 +72,20 @@ const ControlShell = ({
   label,
   title,
   disabled,
+  dense,
   children
 }: {
   label: string;
   title: string;
   disabled?: boolean;
+  dense?: boolean;
   children: React.ReactNode;
 }) => (
   <label
     className={cn(
-      "group relative h-10 min-w-[74px] rounded-md border border-zinc-800 bg-black/60 px-2 py-1",
+      "group relative rounded-md border border-zinc-800 bg-black/60 px-2 py-1",
       "flex items-center gap-2 text-zinc-300 transition-colors",
+      dense ? "h-8 min-w-[66px]" : "h-10 min-w-[74px]",
       disabled ? "opacity-45 cursor-not-allowed" : "hover:border-zinc-600 hover:text-white"
     )}
     title={title}
@@ -97,6 +104,7 @@ const CompactSelect = <T extends string>({
   options,
   disabled,
   icon,
+  dense,
   onChange
 }: {
   label: string;
@@ -105,10 +113,11 @@ const CompactSelect = <T extends string>({
   options: { value: T; label: string }[];
   disabled?: boolean;
   icon: React.ReactNode;
+  dense?: boolean;
   onChange: (value: T) => void;
 }) => (
-  <ControlShell label={label} title={title} disabled={disabled}>
-    {icon}
+  <ControlShell label={label} title={title} disabled={disabled} dense={dense}>
+    <span className={cn(dense && "[&_svg]:h-3.5 [&_svg]:w-3.5")}>{icon}</span>
     <select
       value={value}
       disabled={disabled}
@@ -131,6 +140,7 @@ const GlyphToggle = ({
   active,
   disabled,
   children,
+  dense,
   onClick
 }: {
   label: string;
@@ -138,6 +148,7 @@ const GlyphToggle = ({
   active: boolean;
   disabled?: boolean;
   children: React.ReactNode;
+  dense?: boolean;
   onClick: () => void;
 }) => (
   <button
@@ -148,8 +159,9 @@ const GlyphToggle = ({
     aria-label={label}
     aria-pressed={active}
     className={cn(
-      "group relative h-10 w-10 rounded-md border border-zinc-800 bg-black/60",
+      "group relative rounded-md border border-zinc-800 bg-black/60",
       "inline-flex items-center justify-center transition-colors",
+      dense ? "h-8 w-8 [&_svg]:h-3.5 [&_svg]:w-3.5" : "h-10 w-10",
       active ? "text-white ring-1 ring-white/30" : "text-zinc-400",
       disabled ? "opacity-45 cursor-not-allowed" : "hover:border-zinc-600 hover:text-white"
     )}
@@ -167,11 +179,12 @@ export const PointInspector: React.FC<PointInspectorProps> = ({
   channelLabel,
   onPatchPoint,
   onPatchEditablePoint,
-  onConvertToAuthored
+  onConvertToAuthored,
+  dense = false
 }) => {
   if (!point) {
     return (
-      <div className="flex min-h-10 items-center gap-3 text-xs text-zinc-500">
+      <div className={cn("flex items-center gap-3 text-xs text-zinc-500", dense ? "min-h-8" : "min-h-10")}>
         <span>No point selected</span>
       </div>
     );
@@ -184,17 +197,17 @@ export const PointInspector: React.FC<PointInspectorProps> = ({
   const isBoundary = point.role === 'boundary';
 
   return (
-    <div className="flex min-h-10 flex-wrap items-center gap-2 text-xs">
-      <Badge>{pointNumber ? `Point ${pointNumber} selected` : 'Point selected'}</Badge>
-      {channelLabel && <Badge>{channelLabel}</Badge>}
-      <Badge>{getSourceBadge(point)}</Badge>
-      {edgeBadge && <Badge>{edgeBadge}</Badge>}
+    <div className={cn("flex flex-wrap items-center gap-1.5 text-xs", dense ? "min-h-8" : "min-h-10 gap-2")}>
+      <Badge dense={dense}>{pointNumber ? `Point ${pointNumber}` : 'Point'}</Badge>
+      {channelLabel && <Badge dense={dense}>{channelLabel}</Badge>}
+      <Badge dense={dense}>{getSourceBadge(point)}</Badge>
+      {edgeBadge && <Badge dense={dense}>{edgeBadge}</Badge>}
 
-      <div className="mx-1 h-8 w-px bg-zinc-800" />
+      <div className={cn("mx-1 w-px bg-zinc-800", dense ? "h-6" : "h-8")} />
 
       {isBoundary ? (
-        <ControlShell label="Role" title="What this point represents in the curve." disabled>
-          <Circle className="h-4 w-4" />
+        <ControlShell label="Role" title="What this point represents in the curve." disabled dense={dense}>
+          <Circle className={cn(dense ? "h-3.5 w-3.5" : "h-4 w-4")} />
           <span className="text-xs font-medium">{getPointLabel(point)}</span>
         </ControlShell>
       ) : (
@@ -205,6 +218,7 @@ export const PointInspector: React.FC<PointInspectorProps> = ({
           options={ROLE_OPTIONS}
           disabled={!canEditRole(point)}
           icon={<Circle className="h-4 w-4" />}
+          dense={dense}
           onChange={(role) => onPatchEditablePoint(current => setCurvePointRole(current, role))}
         />
       )}
@@ -216,6 +230,7 @@ export const PointInspector: React.FC<PointInspectorProps> = ({
         options={CONTINUITY_OPTIONS}
         disabled={!canEditContinuity(point)}
         icon={<Spline className="h-4 w-4" />}
+        dense={dense}
         onChange={(continuity) => onPatchEditablePoint(current => ({ ...current, continuity }))}
       />
 
@@ -226,16 +241,18 @@ export const PointInspector: React.FC<PointInspectorProps> = ({
         options={OUT_OPTIONS}
         disabled={outDisabled}
         icon={<MoveRight className="h-4 w-4" />}
+        dense={dense}
         onChange={(outInterpolation) => onPatchEditablePoint(current => setCurvePointOutgoingInterpolation(current, outInterpolation))}
       />
 
-      <div className="mx-1 h-8 w-px bg-zinc-800" />
+      <div className={cn("mx-1 w-px bg-zinc-800", dense ? "h-6" : "h-8")} />
 
       <GlyphToggle
         label="Lock"
         title="Prevent dragging or editing."
         active={locked}
         disabled={!canToggleLock(point)}
+        dense={dense}
         onClick={() => onPatchPoint(current => {
           const editablePoint = canConvertToAuthored(current) ? { ...current, source: 'authored' as const } : current;
           return { ...editablePoint, edit: locked ? 'free' : 'locked' };
@@ -249,6 +266,7 @@ export const PointInspector: React.FC<PointInspectorProps> = ({
         title="Prevent removal during compression/resampling."
         active={preserveActive}
         disabled={!canTogglePreserve(point)}
+        dense={dense}
         onClick={() => onPatchEditablePoint(current => setCurvePointFlag(current, 'uncompressible', !current.flags.includes('uncompressible')))}
       >
         <Bookmark className={cn("h-4 w-4", preserveActive && "fill-current")} />
@@ -258,17 +276,23 @@ export const PointInspector: React.FC<PointInspectorProps> = ({
         <button
           type="button"
           onClick={onConvertToAuthored}
-          className="h-10 rounded-md border border-indigo-500/40 bg-indigo-500/10 px-3 text-xs font-medium text-indigo-200 transition-colors hover:bg-indigo-500/20"
+          className={cn(
+            "rounded-md border border-indigo-500/40 bg-indigo-500/10 text-xs font-medium text-indigo-200 transition-colors hover:bg-indigo-500/20",
+            dense ? "h-8 px-2" : "h-10 px-3"
+          )}
         >
-          Make authored
+          {dense ? 'Author' : 'Make authored'}
         </button>
       )}
 
-      <div className="ml-auto flex items-center gap-3 text-zinc-500">
-        <span>Segment Out is set per point</span>
+      <div className="ml-auto flex items-center gap-2 text-zinc-500">
+        <span className={cn(dense && "hidden 2xl:inline")}>Segment Out is set per point</span>
         <button
           type="button"
-          className="h-8 w-9 rounded border border-zinc-800 bg-black text-zinc-400 hover:text-white"
+          className={cn(
+            "rounded border border-zinc-800 bg-black text-zinc-400 hover:text-white",
+            dense ? "h-7 w-8" : "h-8 w-9"
+          )}
           aria-label="Curve editor menu"
           title="Curve editor menu"
         >

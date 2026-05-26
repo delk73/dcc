@@ -7,6 +7,7 @@ interface AtlasViewerProps {
   curves: LibraryCurve[];
   interpMode: InterpMode;
   spaceLever: number;
+  onSpaceLeverChange?: (position: number) => void;
   onTextureUpdate?: (tex: ImageData) => void;
   onExportAtlas?: () => void;
   canExportAtlas?: boolean;
@@ -18,6 +19,7 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
   curves,
   interpMode,
   spaceLever,
+  onSpaceLeverChange,
   onTextureUpdate,
   onExportAtlas,
   canExportAtlas = true,
@@ -25,8 +27,38 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
   canvasClassName = ''
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const atlasFrameRef = useRef<HTMLDivElement>(null);
 
   const deferredCurves = React.useDeferredValue(curves);
+
+  const getSpacePositionFromClientY = (clientY: number) => {
+    const rect = atlasFrameRef.current?.getBoundingClientRect();
+    if (!rect || rect.height === 0) return spaceLever;
+    return Math.max(0, Math.min(1, 1 - ((clientY - rect.top) / rect.height)));
+  };
+
+  const updateSpaceFromPointer = (clientY: number) => {
+    onSpaceLeverChange?.(getSpacePositionFromClientY(clientY));
+  };
+
+  const handleAtlasPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!onSpaceLeverChange || event.button !== 0) return;
+    event.preventDefault();
+    updateSpaceFromPointer(event.clientY);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleAtlasPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!onSpaceLeverChange || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    event.preventDefault();
+    updateSpaceFromPointer(event.clientY);
+  };
+
+  const handleAtlasPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -142,7 +174,30 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
               </div>
 
               <div 
+                ref={atlasFrameRef}
                 className={`flex-1 relative min-h-[200px] rounded-lg overflow-hidden border border-zinc-800 shadow-inner touch-none ${canvasClassName || 'aspect-[2/1]'}`}
+                role={onSpaceLeverChange ? 'slider' : undefined}
+                aria-label={onSpaceLeverChange ? '2D atlas space index' : undefined}
+                aria-orientation={onSpaceLeverChange ? 'vertical' : undefined}
+                aria-valuemin={onSpaceLeverChange ? 0 : undefined}
+                aria-valuemax={onSpaceLeverChange ? 1 : undefined}
+                aria-valuenow={onSpaceLeverChange ? spaceLever : undefined}
+                tabIndex={onSpaceLeverChange ? 0 : undefined}
+                onPointerDown={handleAtlasPointerDown}
+                onPointerMove={handleAtlasPointerMove}
+                onPointerUp={handleAtlasPointerUp}
+                onPointerCancel={handleAtlasPointerUp}
+                onKeyDown={(event) => {
+                  if (!onSpaceLeverChange) return;
+                  if (event.key === 'ArrowUp') {
+                    event.preventDefault();
+                    onSpaceLeverChange(Math.min(1, spaceLever + 0.01));
+                  }
+                  if (event.key === 'ArrowDown') {
+                    event.preventDefault();
+                    onSpaceLeverChange(Math.max(0, spaceLever - 0.01));
+                  }
+                }}
             style={{
               backgroundColor: '#09090b',
               backgroundImage: `
@@ -165,6 +220,11 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
               className="absolute left-0 right-0 h-px bg-white/80 shadow-[0_0_6px_rgba(255,255,255,0.65)] pointer-events-none"
               style={{ top: `${(1 - spaceLever) * 100}%` }}
             />
+            {onSpaceLeverChange && (
+              <div className="pointer-events-none absolute right-2 top-2 rounded border border-zinc-800 bg-black/60 px-2 py-1 text-[10px] font-mono text-zinc-400">
+                Y {spaceLever.toFixed(3)}
+              </div>
+            )}
           </div>
         </div>
       </div>

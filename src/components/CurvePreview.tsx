@@ -111,7 +111,7 @@ export const CurvePreview: React.FC<CurvePreviewProps> = ({
   return (
     <div className={cn(
       "flex flex-col bg-[#09090b] border border-zinc-800 rounded-xl",
-      isCompact ? "gap-2 p-3" : "gap-4 p-6",
+      isCompact ? "gap-1.5 p-2" : "gap-4 p-6",
       className
     )}>
       <div className="flex items-center justify-between gap-3">
@@ -173,7 +173,7 @@ export const CurvePreview: React.FC<CurvePreviewProps> = ({
 
           <div className={cn(
             "flex-1 min-w-0 relative rounded-lg overflow-hidden border border-zinc-700",
-            isSlice ? "h-12" : isCompact ? "h-14" : "h-20"
+            isSlice ? "h-9" : isCompact ? "h-10" : "h-20"
           )}
              style={{
                   backgroundColor: '#09090b',

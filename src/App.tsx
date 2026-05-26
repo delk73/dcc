@@ -349,29 +349,51 @@ export default function App() {
     { id: 'a', label: 'Alpha', color: 'bg-stone-400' },
   ] satisfies { id: Channel; label: string; color: string }[];
 
-  const enabledEditChannels = channelInfo.filter(ci => editChannels[ci.id]);
-  const editFilterLabel = enabledEditChannels.length === channelInfo.length
-    ? 'All channels enabled. Edits infer the nearest channel when needed.'
-    : enabledEditChannels.length > 0
-      ? `Editing ${enabledEditChannels.map(ci => ci.label.charAt(0)).join(', ')}. Disabled channels remain protected.`
-      : 'No channels enabled. Turn on a channel to edit.';
-
   const toggleEditChannel = (channel: Channel) => {
     dispatch({ type: 'toggle-edit-channel', channel });
   };
 
+  const renderChannelToggles = () => (
+    <div className="flex items-center gap-1 rounded-md border border-zinc-800 bg-black/50 p-1" title="Edit channels">
+      {channelInfo.map((ci) => (
+        <button
+          key={ci.id}
+          type="button"
+          onClick={() => toggleEditChannel(ci.id)}
+          aria-label={`Toggle ${ci.label} editing`}
+          aria-pressed={editChannels[ci.id]}
+          className={cn(
+            "h-7 min-w-9 rounded px-2 text-[10px] font-bold transition-all border flex items-center justify-center gap-1.5",
+            editChannels[ci.id]
+              ? "bg-zinc-800 border-zinc-700 text-white"
+              : "bg-transparent border-transparent text-zinc-600 hover:text-zinc-300 hover:bg-white/5",
+            activeChannel === ci.id && editChannels[ci.id] && "ring-1 ring-white/30"
+          )}
+          title={`${editChannels[ci.id] ? 'Disable' : 'Enable'} ${ci.label} editing`}
+        >
+          <span className={cn("w-1.5 h-1.5 rounded-full", ci.color)} />
+          {ci.label.charAt(0)}
+        </button>
+      ))}
+    </div>
+  );
+
   const renderCurveEditorPanel = (className = '', editorClassName = '') => (
-    <div className={cn("bg-[#09090b] border border-zinc-800 rounded-xl p-4 space-y-3 min-h-0 flex flex-col", className)}>
-       <div className="space-y-2 shrink-0">
-           <h3 className="text-[11px] uppercase tracking-widest font-bold text-zinc-300">Curve Editor</h3>
-           <PointInspector
-              point={selectedCurvePoint}
-              pointNumber={selectedCurvePointNumber}
-              channelLabel={selectedPoint?.channel.toUpperCase()}
-              onPatchPoint={updateSelectedPoint}
-              onPatchEditablePoint={updateEditableSelectedPoint}
-              onConvertToAuthored={convertSelectedPointToAuthored}
-           />
+    <div className={cn("bg-[#09090b] border border-zinc-800 rounded-xl p-2 gap-2 min-h-0 flex flex-col", className)}>
+       <div className="shrink-0 flex flex-wrap items-center gap-2">
+          <h3 className="text-[10px] uppercase tracking-widest font-bold text-zinc-300 mr-1">Curve Editor</h3>
+          <PointInspector
+            point={selectedCurvePoint}
+            pointNumber={selectedCurvePointNumber}
+            channelLabel={selectedPoint?.channel.toUpperCase()}
+            onPatchPoint={updateSelectedPoint}
+            onPatchEditablePoint={updateEditableSelectedPoint}
+            onConvertToAuthored={convertSelectedPointToAuthored}
+            dense
+          />
+          <div className="ml-auto shrink-0">
+            {renderChannelToggles()}
+          </div>
        </div>
 
        <CurveEditor
@@ -390,51 +412,22 @@ export default function App() {
     </div>
   );
 
-  const renderEditFilter = (className = '') => (
-    <div className={cn("grid grid-cols-1 gap-4 min-w-0", className)}>
-        <div className="bg-[#09090b] border border-zinc-800 rounded-xl p-3 flex flex-col gap-2">
-            <h3 className="text-[10px] uppercase tracking-wider font-bold text-zinc-400 border-b border-zinc-800 pb-2">Edit Filter <span className="font-normal normal-case text-zinc-600">(Affects which channels you edit)</span></h3>
-            <div className="flex gap-2">
-                 {channelInfo.map((ci) => (
-                    <button
-                        key={ci.id}
-                        onClick={() => toggleEditChannel(ci.id)}
-                        aria-pressed={editChannels[ci.id]}
-                        className={cn(
-                        "flex-1 py-1.5 rounded-lg text-xs font-medium transition-all border flex items-center justify-center gap-2",
-                        editChannels[ci.id]
-                            ? `bg-zinc-800 border-zinc-700 text-white shadow-sm` 
-                            : "bg-transparent border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:bg-white/5",
-                        activeChannel === ci.id && editChannels[ci.id] && "ring-1 ring-white/30"
-                        )}
-                    >
-                        <span className={cn("w-2 h-2 rounded-full", ci.color)} />
-                        {ci.label.charAt(0)}
-                    </button>
-                 ))}
-            </div>
-            <p className="text-[10px] text-zinc-500 pt-1">{editFilterLabel}</p>
-        </div>
-    </div>
-  );
-
   const renderSpaceContinuum = (className = '') => (
-    <div className={cn("bg-[#09090b] border border-zinc-800 rounded-xl p-4 flex flex-col gap-4", className)}>
-        <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-                <h3 className="text-xs uppercase tracking-wider font-bold text-zinc-300">Space Continuum <span className="text-zinc-600 font-normal normal-case">(1D)</span></h3>
-            </div>
+    <div className={cn("bg-[#09090b] border border-zinc-800 rounded-xl px-3 py-2 flex items-center gap-3 min-h-[58px]", className)}>
+        <div className="w-24 shrink-0">
+          <h3 className="text-[10px] uppercase tracking-wider font-bold text-zinc-300 leading-3">Space</h3>
+          <div className="text-[10px] font-mono text-zinc-500">X {spaceLever.toFixed(3)}</div>
         </div>
         
-        <div ref={continuumTrackRef} className="relative pt-5 pb-7 mx-4">
+        <div ref={continuumTrackRef} className="relative h-11 flex-1 min-w-0 mx-2">
              <div className="absolute top-1/2 -mt-1 left-0 right-0 h-2 rounded-full overflow-hidden opacity-50" style={{ background: categoryGradient }} />
              
-             <div className="absolute top-full text-[10px] text-zinc-500 font-mono w-full flex justify-between mt-2 px-1">
-                 <div className="flex flex-col"><span className="text-zinc-300">0.00</span>Start</div>
+             <div className="absolute top-[30px] text-[10px] text-zinc-500 font-mono w-full flex justify-between px-1 pointer-events-none">
+                 <div><span className="text-zinc-300">0.00</span></div>
                  <div>0.25</div>
                  <div>0.50</div>
                  <div>0.75</div>
-                 <div className="flex flex-col items-end"><span className="text-zinc-300">1.00</span>End</div>
+                 <div className="text-zinc-300">1.00</div>
              </div>
              
              <div className="absolute top-1/2 -translate-y-1/2 left-0 right-0 pointer-events-none z-40">
@@ -474,15 +467,9 @@ export default function App() {
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-30"
                 />
                 
-             <div className="absolute top-0 bottom-0 pointer-events-none w-8 bg-indigo-500/20 border border-indigo-500/50 rounded -ml-4 z-20 flex items-center justify-center shadow-[0_0_15px_rgba(99,102,241,0.2)]" style={{ left: `${spaceLever * 100}%` }}>
-                 <div className="w-3 h-8 bg-indigo-400 rounded-full" />
+             <div className="absolute top-1/2 -translate-y-1/2 pointer-events-none w-7 h-9 bg-indigo-500/20 border border-indigo-500/50 rounded -ml-3.5 z-20 flex items-center justify-center shadow-[0_0_15px_rgba(99,102,241,0.2)]" style={{ left: `${spaceLever * 100}%` }}>
+                 <div className="w-2.5 h-7 bg-indigo-400 rounded-full" />
              </div>
-        </div>
-        
-        <div className="flex items-center justify-between text-xs font-mono text-zinc-400 mt-2">
-            <div className="flex gap-4">
-                <span>X: {spaceLever.toFixed(2)}</span>
-            </div>
         </div>
     </div>
   );
@@ -532,9 +519,9 @@ export default function App() {
       </header>
 
       <main className="flex-1 min-h-0 overflow-hidden">
-        <div className="h-full max-w-[1800px] mx-auto p-3 sm:p-4 min-h-0">
+        <div className="h-full max-w-[1800px] mx-auto p-2 sm:p-3 min-h-0">
           {mainView === 'curve' && (
-            <div className="h-full min-h-0 grid grid-rows-[auto_minmax(240px,1fr)_auto_auto] gap-3 overflow-y-auto xl:overflow-hidden">
+            <div className="h-full min-h-0 grid grid-rows-[auto_minmax(260px,1fr)_auto_auto] gap-2 overflow-y-auto xl:overflow-hidden">
               <CurvePreview
                 curve={activeSpaceCurve}
                 interpMode={interpMode}
@@ -544,22 +531,22 @@ export default function App() {
                 className="shrink-0"
               />
 
-              {renderCurveEditorPanel("min-h-[260px] xl:min-h-0", "h-[clamp(260px,46vh,620px)] xl:h-auto xl:flex-1")}
+              {renderCurveEditorPanel("min-h-[280px] xl:min-h-0", "h-[clamp(280px,54vh,720px)] xl:h-auto xl:flex-1")}
 
-              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] gap-3 min-w-0">
-                {renderEditFilter()}
-                <CurveImportPanel onImport={importCurve} />
+              <div className="min-w-0">
+                <CurveImportPanel onImport={importCurve} dense className="max-h-44" />
               </div>
               {renderSpaceContinuum()}
             </div>
           )}
 
           {mainView === '2d' && (
-            <div className="h-full min-h-0 grid grid-rows-[minmax(220px,1.25fr)_auto_minmax(220px,1fr)_auto_auto] gap-3 overflow-y-auto 2xl:overflow-hidden">
+            <div className="h-full min-h-0 grid grid-rows-[minmax(230px,1.35fr)_auto_minmax(220px,1fr)_auto_auto] gap-2 overflow-y-auto 2xl:overflow-hidden">
               <AtlasViewer
                 curves={spaceCurves}
                 interpMode={interpMode}
                 spaceLever={spaceLever}
+                onSpaceLeverChange={setSpacePosition}
                 onTextureUpdate={setAtlasTexture}
                 onExportAtlas={handleExportLibraryLUT}
                 canExportAtlas={normalizedCategoryCurves.length > 1}
@@ -573,10 +560,9 @@ export default function App() {
                 sampleY={spaceLever}
                 variant="slice"
               />
-              {renderCurveEditorPanel("min-h-[220px]", "h-[clamp(220px,34vh,460px)] 2xl:h-auto 2xl:flex-1")}
-              <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,420px)] gap-3 min-w-0">
-                {renderEditFilter()}
-                <CurveImportPanel onImport={importCurve} />
+              {renderCurveEditorPanel("min-h-[220px]", "h-[clamp(220px,38vh,520px)] 2xl:h-auto 2xl:flex-1")}
+              <div className="min-w-0">
+                <CurveImportPanel onImport={importCurve} dense className="max-h-40" />
               </div>
               {renderSpaceContinuum()}
             </div>
