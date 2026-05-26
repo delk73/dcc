@@ -87,6 +87,7 @@ const MAX_ZOOM_X = 32;
 const ZOOM_BUTTON_FACTOR = 1.25;
 const MIN_TRANSFORM_SPAN = 0.001;
 const DISPLAY_CURVE_SAMPLES = 192;
+const DISPLAY_SAMPLE_TIME_PRECISION = 9;
 type DragGesture = {
   channel: Channel;
   pointId: string;
@@ -774,14 +775,23 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
       const span = Math.max(POINT_EPSILON, endTime - startTime);
       const sampleCount = Math.max(2, Math.ceil(DISPLAY_CURVE_SAMPLES * span));
 
+      const sampleTimes = new Map<string, number>();
+      const addSampleTime = (time: number) => {
+        const clampedTime = Math.max(startTime, Math.min(endTime, time));
+        sampleTimes.set(clampedTime.toFixed(DISPLAY_SAMPLE_TIME_PRECISION), clampedTime);
+      };
+
       for (let sampleIndex = 0; sampleIndex <= sampleCount; sampleIndex++) {
-        const ratio = sampleIndex / sampleCount;
-        const time = startTime + span * ratio;
+        addSampleTime(startTime + span * (sampleIndex / sampleCount));
+      }
+      sortedData.forEach(point => addSampleTime(point.time));
+
+      [...sampleTimes.values()].sort((a, b) => a - b).forEach((time, sampleIndex) => {
         const value = clampDisplayValue(evaluateCurve(sortedData, tangents, time, interpMode));
         const x = timeToX(time, computedViewport, PLOT_RECT);
         const y = valueToY(value, computedViewport, PLOT_RECT);
         pathD += `${sampleIndex === 0 ? 'M' : 'L'} ${x},${y} `;
-      }
+      });
     }
     
     const isDraggingThis = draggingPoint?.channel === channel;
