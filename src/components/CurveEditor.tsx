@@ -25,7 +25,6 @@ import {
   canDragPoint,
   createAuthoredInteriorPoint,
   getEdgeOwner,
-  getOutgoingInterpolation,
   orderCurvePoints,
   type SelectedPointRef
 } from '../lib/curvePointPolicy';
@@ -87,6 +86,7 @@ const MIN_ZOOM_X = 1;
 const MAX_ZOOM_X = 32;
 const ZOOM_BUTTON_FACTOR = 1.25;
 const MIN_TRANSFORM_SPAN = 0.001;
+const DISPLAY_CURVE_SAMPLES = 192;
 type DragGesture = {
   channel: Channel;
   pointId: string;
@@ -249,6 +249,9 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     time: xToTime(point.x, sourceViewport, PLOT_RECT),
     value: yToValue(point.y, sourceViewport, PLOT_RECT)
   });
+
+  const clampDisplayValue = (value: number, sourceViewport = computedViewport) =>
+    Math.max(sourceViewport.valueMin, Math.min(sourceViewport.valueMax, value));
 
   const adjustZoom = (factor: number) => {
     setZoomAnchor(latestCursorAnchorRef.current);
@@ -763,34 +766,21 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     // We sort just for drawing, to ensure correct lines even while dragging
     const sortedData = [...data].sort((a,b) => a.time - b.time);
     
+    const tangents = computeTangents(sortedData);
     let pathD = '';
     if (sortedData.length > 0) {
-      pathD += `M ${timeToX(sortedData[0].time, computedViewport, PLOT_RECT)},${valueToY(sortedData[0].value, computedViewport, PLOT_RECT)} `;
-      
-      const tangents = computeTangents(sortedData);
-      
-      for (let i = 0; i < sortedData.length - 1; i++) {
-        const k0 = sortedData[i];
-        const k1 = sortedData[i+1];
-        
-        const segmentInterpolation = getOutgoingInterpolation(k0);
-        if (segmentInterpolation === 'constant') {
-          pathD += `L ${timeToX(k1.time, computedViewport, PLOT_RECT)},${valueToY(k0.value, computedViewport, PLOT_RECT)} L ${timeToX(k1.time, computedViewport, PLOT_RECT)},${valueToY(k1.value, computedViewport, PLOT_RECT)} `;
-        } else if (segmentInterpolation === 'linear') {
-          pathD += `L ${timeToX(k1.time, computedViewport, PLOT_RECT)},${valueToY(k1.value, computedViewport, PLOT_RECT)} `;
-        } else {
-          const dx = k1.time - k0.time;
-          const m0 = tangents[i];
-          const m1 = tangents[i+1];
-          
-          const cp1_t = k0.time + dx / 3;
-          const cp1_v = k0.value + m0 * (dx / 3);
-          
-          const cp2_t = k1.time - dx / 3;
-          const cp2_v = k1.value - m1 * (dx / 3);
-          
-          pathD += `C ${timeToX(cp1_t, computedViewport, PLOT_RECT)},${valueToY(cp1_v, computedViewport, PLOT_RECT)} ${timeToX(cp2_t, computedViewport, PLOT_RECT)},${valueToY(cp2_v, computedViewport, PLOT_RECT)} ${timeToX(k1.time, computedViewport, PLOT_RECT)},${valueToY(k1.value, computedViewport, PLOT_RECT)} `;
-        }
+      const startTime = sortedData[0].time;
+      const endTime = sortedData[sortedData.length - 1].time;
+      const span = Math.max(POINT_EPSILON, endTime - startTime);
+      const sampleCount = Math.max(2, Math.ceil(DISPLAY_CURVE_SAMPLES * span));
+
+      for (let sampleIndex = 0; sampleIndex <= sampleCount; sampleIndex++) {
+        const ratio = sampleIndex / sampleCount;
+        const time = startTime + span * ratio;
+        const value = clampDisplayValue(evaluateCurve(sortedData, tangents, time, interpMode));
+        const x = timeToX(time, computedViewport, PLOT_RECT);
+        const y = valueToY(value, computedViewport, PLOT_RECT);
+        pathD += `${sampleIndex === 0 ? 'M' : 'L'} ${x},${y} `;
       }
     }
     
@@ -809,9 +799,9 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
         {startBoundary.time > POINT_EPSILON && (
           <line
             x1={timeToX(0, computedViewport, PLOT_RECT)}
-            y1={valueToY(startBoundary.value, computedViewport, PLOT_RECT)}
+            y1={valueToY(clampDisplayValue(startBoundary.value), computedViewport, PLOT_RECT)}
             x2={timeToX(startBoundary.time, computedViewport, PLOT_RECT)}
-            y2={valueToY(startBoundary.value, computedViewport, PLOT_RECT)}
+            y2={valueToY(clampDisplayValue(startBoundary.value), computedViewport, PLOT_RECT)}
             stroke={CHANNEL_COLORS[channel]}
             strokeWidth={1.5}
             opacity={extensionOpacity}
@@ -821,9 +811,9 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
         {endBoundary.time < 1 - POINT_EPSILON && (
           <line
             x1={timeToX(endBoundary.time, computedViewport, PLOT_RECT)}
-            y1={valueToY(endBoundary.value, computedViewport, PLOT_RECT)}
+            y1={valueToY(clampDisplayValue(endBoundary.value), computedViewport, PLOT_RECT)}
             x2={timeToX(1, computedViewport, PLOT_RECT)}
-            y2={valueToY(endBoundary.value, computedViewport, PLOT_RECT)}
+            y2={valueToY(clampDisplayValue(endBoundary.value), computedViewport, PLOT_RECT)}
             stroke={CHANNEL_COLORS[channel]}
             strokeWidth={1.5}
             opacity={extensionOpacity}
