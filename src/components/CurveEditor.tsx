@@ -1,3 +1,9 @@
+//! # CurveEditor Module Layout Authority
+//! - [Rule 3.1] The 1D color preview strip and the interactive SVG viewport grid must reside within a top-pinned, vertically locked layout stack.
+//! - [Rule 3.2] The interactive SVG drawing area must be constrained to a deterministic aspect ratio or maximum pixel height calculation based on `PLOT_RECT` to eliminate aspect-driven vertical line stretching. Trailing dead space must pool as a neutral background gutter at the bottom of the canvas wrapper container.
+//! - [Rule 3.3] Controls below the horizontal coordinate axis line must use a full-width layout split: active channel selection selectors anchor left under the 0.00 grid origin column; point metadata properties and numeric inspectors float right under the 1.00 grid end column.
+//! - [Rule 3.4] In portrait or vertically surplus layouts, the curve filter, domain bounds, and selected point inspectors must remain snug to the bottom edge of the curve display; any unused vertical space belongs below those controls.
+
 import React, { useMemo, useRef, useState } from 'react';
 import { Maximize2, Minus, Plus } from 'lucide-react';
 import { ColorCurve, Channel, ChannelMask, CurvePoint } from '../types';
@@ -59,6 +65,7 @@ const PLOT_RECT: PlotRect = {
   width: INNER_WIDTH,
   height: INNER_HEIGHT
 };
+const SVG_ASPECT_RATIO = WIDTH / HEIGHT;
 
 const CHANNEL_COLORS = {
   r: '#ef4444',
@@ -113,6 +120,11 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   const editableChannels = CHANNELS.filter(channel => editChannels[channel]);
   const boundedWidth = width && width > 0 ? width : undefined;
   const boundedHeight = height && height > 0 ? height : undefined;
+  const availablePlotHeight = Math.max(
+    180,
+    (boundedHeight ?? HEIGHT) - PREVIEW_STRIP_HEIGHT - CONTROL_BAR_HEIGHT - 48
+  );
+  const lockedPlotWidth = Math.ceil(availablePlotHeight * SVG_ASPECT_RATIO);
 
   const computedViewport = useMemo<CurveViewport>(() => {
     const anchorTime = Math.max(0, Math.min(1, zoomAnchor.time));
@@ -139,6 +151,12 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
 
   const viewMinX = computedViewport.timeMin;
   const viewMaxX = computedViewport.timeMax;
+  const selectedCurvePoint = selectedPoint
+    ? activeCurveData[selectedPoint.channel]?.find(point => point.id === selectedPoint.pointId) ?? null
+    : null;
+  const selectedPointLabel = selectedPoint && selectedCurvePoint
+    ? `${selectedPoint.channel.toUpperCase()}:${activeCurveData[selectedPoint.channel].findIndex(point => point.id === selectedPoint.pointId) + 1}`
+    : 'POINT: NONE';
 
   const horizontalStripGradient = useMemo(() => {
     const sortedCurve = {
@@ -668,128 +686,172 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
         height: boundedHeight,
       }}
       className={cn(
-        "w-full min-h-[240px] relative select-none rounded-xl bg-[#09090b] border border-zinc-800 overflow-hidden shadow-2xl outline-none p-2 flex flex-col gap-2",
+        "w-full min-h-[240px] relative select-none rounded-xl bg-[#09090b] border border-zinc-800 overflow-hidden shadow-2xl outline-none p-2 flex flex-col gap-1",
         className ?? "h-full"
       )}
       tabIndex={0}
     >
       <div
-        style={{ height: PREVIEW_STRIP_HEIGHT }}
-        className="relative w-full shrink-0 overflow-hidden rounded border border-zinc-800/80 opacity-90 shadow-inner"
+        className="flex w-full shrink-0 flex-col items-start justify-start bg-[#09090b]"
+        style={{ width: `min(100%, ${lockedPlotWidth}px)` }}
       >
         <div
-          className="absolute inset-0"
-          style={{
-            backgroundColor: '#0b0b0c',
-            backgroundImage: `
-              linear-gradient(45deg, #27272a 25%, transparent 25%),
-              linear-gradient(-45deg, #27272a 25%, transparent 25%),
-              linear-gradient(45deg, transparent 75%, #27272a 75%),
-              linear-gradient(-45deg, transparent 75%, #27272a 75%)`,
-            backgroundSize: '16px 16px',
-            backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
-          }}
-        />
-        <div
-          className="absolute bottom-0 top-0"
-          style={{
-            ...PREVIEW_INSET,
-            background: horizontalStripGradient,
-          }}
-        />
-      </div>
-
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded border border-zinc-900/80 bg-[#09090b]">
-        <svg
-          ref={svgRef}
-          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-          className="absolute inset-0 h-full w-full touch-none cursor-crosshair"
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerLeave={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-          onDoubleClick={handleSvgDoubleClick}
-          onWheel={handleWheel}
+          style={{ height: PREVIEW_STRIP_HEIGHT }}
+          className="relative w-full shrink-0 overflow-hidden rounded border border-zinc-800/80 opacity-90 shadow-inner"
         >
-          {drawGrid()}
-          {CHANNELS.map(ch => drawCurve(ch))}
-        </svg>
-        <div className="absolute right-3 top-3 flex items-center gap-1 rounded-md border border-zinc-800 bg-black/80 p-1 shadow-xl backdrop-blur">
-          <button
-            type="button"
-            title="Zoom out"
-            aria-label="Zoom out"
-            onClick={() => adjustZoom(1 / ZOOM_BUTTON_FACTOR)}
-            className="grid h-7 w-7 place-items-center rounded text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
-          >
-            <Minus className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            title="Fit view"
-            aria-label="Fit view"
-            onClick={() => setZoomX(MIN_ZOOM_X)}
-            className="grid h-7 w-7 place-items-center rounded text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
-          >
-            <Maximize2 className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            title="Zoom in"
-            aria-label="Zoom in"
-            onClick={() => adjustZoom(ZOOM_BUTTON_FACTOR)}
-            className="grid h-7 w-7 place-items-center rounded text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundColor: '#0b0b0c',
+              backgroundImage: `
+                linear-gradient(45deg, #27272a 25%, transparent 25%),
+                linear-gradient(-45deg, #27272a 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #27272a 75%),
+                linear-gradient(-45deg, transparent 75%, #27272a 75%)`,
+              backgroundSize: '16px 16px',
+              backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
+            }}
+          />
+          <div
+            className="absolute bottom-0 top-0"
+            style={{
+              ...PREVIEW_INSET,
+              background: horizontalStripGradient,
+            }}
+          />
         </div>
-        <div className="pointer-events-none absolute bottom-3 left-3 font-mono text-[10px] text-zinc-500 drop-shadow-md">
-          Wheel zoom &bull; Double-click add point &bull; Right-click remove point
-        </div>
-        <div className="pointer-events-none absolute bottom-3 right-3 font-mono text-[10px] text-zinc-500 drop-shadow-md">
-          {cursorValue
-            ? `T ${cursorValue.time.toFixed(3)}  V ${cursorValue.value.toFixed(3)}`
-            : 'Double-click add point'}
+
+        <div className="mt-1 w-full overflow-hidden bg-[#09090b]">
+          <div
+            className="relative w-full shrink-0 overflow-hidden rounded border border-zinc-900/80 bg-[#09090b]"
+            style={{
+              aspectRatio: `${WIDTH} / ${HEIGHT}`,
+            }}
+          >
+            <svg
+              ref={svgRef}
+              viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+              preserveAspectRatio="xMinYMin meet"
+              className="absolute inset-0 h-full w-full touch-none cursor-crosshair"
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerLeave={handlePointerUp}
+              onPointerCancel={handlePointerUp}
+              onDoubleClick={handleSvgDoubleClick}
+              onWheel={handleWheel}
+            >
+              {drawGrid()}
+              {CHANNELS.map(ch => drawCurve(ch))}
+            </svg>
+            <div className="absolute right-3 top-3 flex items-center gap-1 rounded-md border border-zinc-800 bg-black/80 p-1 shadow-xl backdrop-blur">
+              <button
+                type="button"
+                title="Zoom out"
+                aria-label="Zoom out"
+                onClick={() => adjustZoom(1 / ZOOM_BUTTON_FACTOR)}
+                className="grid h-7 w-7 place-items-center rounded text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+              >
+                <Minus className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                title="Fit view"
+                aria-label="Fit view"
+                onClick={() => setZoomX(MIN_ZOOM_X)}
+                className="grid h-7 w-7 place-items-center rounded text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+              >
+                <Maximize2 className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                title="Zoom in"
+                aria-label="Zoom in"
+                onClick={() => adjustZoom(ZOOM_BUTTON_FACTOR)}
+                className="grid h-7 w-7 place-items-center rounded text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="pointer-events-none absolute bottom-3 left-3 font-mono text-[10px] text-zinc-500 drop-shadow-md">
+              Wheel zoom &bull; Double-click add point &bull; Right-click remove point
+            </div>
+            <div className="pointer-events-none absolute bottom-3 right-3 font-mono text-[10px] text-zinc-500 drop-shadow-md">
+              {cursorValue
+                ? `T ${cursorValue.time.toFixed(3)}  V ${cursorValue.value.toFixed(3)}`
+                : 'Double-click add point'}
+            </div>
+          </div>
         </div>
       </div>
 
       <div
-        style={{ height: CONTROL_BAR_HEIGHT }}
-        className="flex w-full shrink-0 items-center justify-between gap-3 border-t border-zinc-900/80 pt-1"
+        style={{
+          height: CONTROL_BAR_HEIGHT,
+          width: `min(100%, ${lockedPlotWidth}px)`,
+        }}
+        className="flex w-full shrink-0 flex-row items-center justify-between gap-3 border-t border-zinc-900/80 pt-1"
       >
-        <div className="flex items-center gap-1 rounded border border-zinc-950 bg-zinc-900/40 p-0.5">
-          {CHANNELS.map((channel) => {
-            const isEditable = editChannels[channel];
+        <div
+          className="flex min-w-0 items-center gap-2"
+          style={{ paddingLeft: SVG_MARGIN.left }}
+        >
+          <div className="flex items-center gap-1 rounded border border-zinc-950 bg-zinc-900/40 p-0.5">
+            {CHANNELS.map((channel) => {
+              const isEditable = editChannels[channel];
 
-            return (
-              <button
-                key={channel}
-                type="button"
-                onClick={() => onEditChannelToggle(channel)}
-                aria-label={`${isEditable ? 'Disable' : 'Enable'} ${channel.toUpperCase()} editing`}
-                aria-pressed={isEditable}
-                className={cn(
-                  "flex h-6 min-w-8 items-center justify-center gap-1 rounded border px-1.5 font-mono text-[10px] font-bold transition-colors",
-                  isEditable
-                    ? "border-zinc-700 bg-zinc-900 text-zinc-100"
-                    : "border-transparent bg-transparent text-zinc-600 opacity-45 hover:bg-zinc-900 hover:text-zinc-400"
-                )}
-                title={`${isEditable ? 'Disable' : 'Enable'} ${channel.toUpperCase()} editing`}
-              >
-                <span
-                  className="h-1 w-1 rounded-full"
-                  style={{ backgroundColor: CHANNEL_COLORS[channel] }}
-                />
-                {channel.toUpperCase()}
-              </button>
-            );
-          })}
+              return (
+                <button
+                  key={channel}
+                  type="button"
+                  onClick={() => onEditChannelToggle(channel)}
+                  aria-label={`${isEditable ? 'Disable' : 'Enable'} ${channel.toUpperCase()} editing`}
+                  aria-pressed={isEditable}
+                  className={cn(
+                    "flex h-6 min-w-8 items-center justify-center gap-1 rounded border px-1.5 font-mono text-[10px] font-bold transition-colors",
+                    isEditable
+                      ? "border-zinc-700 bg-zinc-900 text-zinc-100"
+                      : "border-transparent bg-transparent text-zinc-600 opacity-45 hover:bg-zinc-900 hover:text-zinc-400"
+                  )}
+                  title={`${isEditable ? 'Disable' : 'Enable'} ${channel.toUpperCase()} editing`}
+                >
+                  <span
+                    className="h-1 w-1 rounded-full"
+                    style={{ backgroundColor: CHANNEL_COLORS[channel] }}
+                  />
+                  {channel.toUpperCase()}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="truncate font-mono text-[10px] tracking-wider text-zinc-500">
+            DOMAIN: <span className="font-bold text-zinc-400">[ 0.000 ] - [ 1.000 ]</span>
+          </div>
         </div>
 
-        <div className="truncate text-right font-mono text-[10px] tracking-wider text-zinc-500">
-          DOMAIN: <span className="font-bold text-zinc-400">[ 0.000 ] - [ 1.000 ]</span>
+        <div
+          className="flex min-w-0 items-center justify-end gap-1.5 font-mono text-[10px] tracking-wider text-zinc-500"
+          style={{ paddingRight: SVG_MARGIN.right }}
+        >
+          <span className="shrink-0 rounded border border-zinc-800 bg-zinc-950 px-1.5 py-0.5 font-bold text-zinc-300">
+            {selectedPointLabel}
+          </span>
+          <span className="shrink-0 rounded border border-zinc-800 bg-zinc-950 px-1.5 py-0.5 text-zinc-400">
+            {selectedCurvePoint?.source.toUpperCase() ?? 'UNSELECTED'}
+          </span>
+          <span className="shrink-0 rounded border border-zinc-800 bg-zinc-950 px-1.5 py-0.5 text-zinc-400">
+            {selectedCurvePoint?.continuity.toUpperCase() ?? 'SMOOTH'}
+          </span>
+          <span className="shrink-0 text-right text-zinc-400">
+            T <span className="inline-block w-10 text-zinc-300">{(selectedCurvePoint?.time ?? cursorValue?.time ?? 0).toFixed(3)}</span>
+          </span>
+          <span className="shrink-0 text-right text-zinc-400">
+            V <span className="inline-block w-10 text-zinc-300">{(selectedCurvePoint?.value ?? cursorValue?.value ?? 0).toFixed(3)}</span>
+          </span>
         </div>
       </div>
+
+      <div className="min-h-0 flex-1 bg-[#09090b]" aria-hidden="true" />
     </div>
   );
 };

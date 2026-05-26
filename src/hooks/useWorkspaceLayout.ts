@@ -63,17 +63,17 @@ export function useWorkspaceLayout(windowWidth: number, windowHeight: number): C
       height: SPEC_CONSTRAINTS.SLIDER_HEIGHT,
     };
   } else {
-    // Rule 2.2: Portrait vertical stack. Read-only atlas top, interactive graph bottom.
+    // Rule 2.2: Portrait vertical stack. Interactive graph top, read-only atlas below.
     const halfHeight = Math.floor(workspaceHeight / 2);
 
-    atlasViewport = {
+    curveEditor = {
       x: SPEC_CONSTRAINTS.CHANNEL_WIDTH,
       y: workspaceY,
       width: availableWidth,
       height: halfHeight,
     };
 
-    curveEditor = {
+    atlasViewport = {
       x: SPEC_CONSTRAINTS.CHANNEL_WIDTH,
       y: workspaceY + halfHeight,
       width: availableWidth,

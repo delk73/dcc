@@ -2,6 +2,7 @@ import React, { useReducer, useState, useEffect, useMemo, useRef } from 'react';
 import { get, set } from 'idb-keyval';
 import { ColorCurve, Channel, CurvePoint, LibraryCurve } from './types';
 import { CurveEditor } from './components/CurveEditor';
+import { AtlasViewer } from './components/AtlasViewer';
 import { PointInspector } from './components/PointInspector';
 import { Download, RotateCcw, Settings2 } from 'lucide-react';
 import { cn } from './lib/utils';
@@ -101,26 +102,6 @@ export default function App() {
   const setRawSpacePosition = (val: number) => {
       dispatch({ type: 'set-space-position', mainView: TWO_DIMENSIONAL_WORKSPACE_VIEW, position: val });
   };
-
-  const editorFrame = useMemo(() => {
-    const left = Math.min(layout.atlasViewport.x, layout.curveEditor.x);
-    const top = Math.min(layout.atlasViewport.y, layout.curveEditor.y);
-    const right = Math.max(
-      layout.atlasViewport.x + layout.atlasViewport.width,
-      layout.curveEditor.x + layout.curveEditor.width
-    );
-    const bottom = Math.max(
-      layout.atlasViewport.y + layout.atlasViewport.height,
-      layout.curveEditor.y + layout.curveEditor.height
-    );
-
-    return {
-      x: left,
-      y: top,
-      width: right - left,
-      height: bottom - top,
-    };
-  }, [layout.atlasViewport, layout.curveEditor]);
 
   useEffect(() => {
     if (mainView !== TWO_DIMENSIONAL_WORKSPACE_VIEW) {
@@ -422,11 +403,25 @@ export default function App() {
             : dispatch({ type: 'clear-point-selection' })}
           interpMode={interpMode}
           spaceLever={spaceLever}
-          width={Math.max(0, editorFrame.width - 16)}
-          height={Math.max(240, editorFrame.height - 72)}
+          width={Math.max(0, layout.curveEditor.width - 16)}
+          height={Math.max(240, layout.curveEditor.height - 72)}
           className={editorClassName}
        />
     </div>
+  );
+
+  const renderAtlasPanel = (className = '') => (
+    <AtlasViewer
+      curves={normalizedCategoryCurves}
+      interpMode={interpMode}
+      spaceLever={spaceLever}
+      onSpaceLeverChange={setSpacePosition}
+      onTextureUpdate={setAtlasTexture}
+      onExportAtlas={handleExportLibraryLUT}
+      canExportAtlas={normalizedCategoryCurves.length > 1}
+      className={cn("h-full min-h-0 rounded-none border-zinc-800 p-2", className)}
+      canvasClassName="min-h-0"
+    />
   );
 
   const renderSpaceContinuum = (className = '') => (
@@ -543,15 +538,29 @@ export default function App() {
         data-layout-region="curveEditor"
         style={{
           position: 'fixed',
-          left: editorFrame.x,
-          top: editorFrame.y,
-          width: editorFrame.width,
-          height: editorFrame.height
+          left: layout.curveEditor.x,
+          top: layout.curveEditor.y,
+          width: layout.curveEditor.width,
+          height: layout.curveEditor.height
         }}
         className="overflow-hidden bg-black p-2"
       >
         {renderCurveEditorPanel("h-full min-h-0 rounded-none border-zinc-800", "h-full min-h-0 flex-1 rounded-none")}
       </main>
+
+      <section
+        data-layout-region="atlasViewport"
+        style={{
+          position: 'fixed',
+          left: layout.atlasViewport.x,
+          top: layout.atlasViewport.y,
+          width: layout.atlasViewport.width,
+          height: layout.atlasViewport.height
+        }}
+        className="overflow-hidden bg-black p-2"
+      >
+        {renderAtlasPanel()}
+      </section>
 
       <footer
         data-layout-region="spaceSlider"

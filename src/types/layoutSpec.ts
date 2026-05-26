@@ -14,9 +14,8 @@
  *
  * ## 2. Aspect Ratio Reflow (Best-Fit Model)
  * - [Rule 2.1] Widescreen (Aspect >= 1.0): Viewports partition side-by-side as distinct halves.
- * - [Rule 2.2] Portrait (Aspect < 1.0): Viewports stack vertically. The read-only 2D Atlas Viewer
- * is pushed to the top; the highly interactive 1D Curve Editor drops to the bottom
- * to clear the user's hand/stylus tracking path.
+ * - [Rule 2.2] Portrait (Aspect < 1.0): Viewports stack vertically. The highly interactive
+ * 1D Curve Editor remains top-priority; the 2D Atlas Viewer follows below it.
  * - [Rule 2.3] Component geometry orientation remains invariant during reflow.
  */
 

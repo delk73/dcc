@@ -33,13 +33,13 @@ function executeComplianceSuite() {
     throw new Error('FAIL: 1080x1920 viewport incorrectly calculated as widescreen layout.');
   }
 
-  const atlasBottomY = portraitLayout.atlasViewport.y + portraitLayout.atlasViewport.height;
-  if (portraitLayout.curveEditor.y < atlasBottomY) {
+  const curveBottomY = portraitLayout.curveEditor.y + portraitLayout.curveEditor.height;
+  if (portraitLayout.atlasViewport.y < curveBottomY) {
     throw new Error(
-      'FAIL [Rule 2.2]: In portrait, highly interactive CurveEditor must drop completely below the read-only AtlasViewport.'
+      'FAIL [Rule 2.2]: In portrait, 2D Atlas Viewer must sit completely below the highly interactive CurveEditor.'
     );
   }
-  console.log('-> [PASS] Rule 2.2: Portrait anti-occlusion stack order validated.');
+  console.log('-> [PASS] Rule 2.2: Portrait curve-first stack order validated.');
 
   if (wideLayout.channelStrip.x !== 0 || portraitLayout.channelStrip.x !== 0) {
     throw new Error('FAIL [Rule 1.4]: Channel strip shifted off the left monitor border frame.');
