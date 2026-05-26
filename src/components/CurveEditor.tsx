@@ -41,6 +41,8 @@ interface CurveEditorProps {
   interpMode: InterpMode;
   spaceLever: number;
   domainTime?: number;
+  curveIndexLabel?: string;
+  curveIndexTitle?: string;
   width?: number;
   height?: number;
   className?: string;
@@ -103,6 +105,8 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   interpMode,
   spaceLever,
   domainTime,
+  curveIndexLabel,
+  curveIndexTitle,
   width,
   height,
   className
@@ -153,11 +157,34 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
 
   const viewMinX = computedViewport.timeMin;
   const viewMaxX = computedViewport.timeMax;
-  const selectedCurvePoint = selectedPoint
+  const explicitlySelectedCurvePoint = selectedPoint
     ? activeCurveData[selectedPoint.channel]?.find(point => point.id === selectedPoint.pointId) ?? null
     : null;
-  const selectedPointLabel = selectedPoint && selectedCurvePoint
-    ? `${selectedPoint.channel.toUpperCase()}:${activeCurveData[selectedPoint.channel].findIndex(point => point.id === selectedPoint.pointId) + 1}`
+  const fallbackFocusedPoint = useMemo(() => {
+    if (explicitlySelectedCurvePoint) return null;
+
+    const targetTime = domainTime ?? 0.5;
+    return editableChannels.reduce((nearest, channel) => {
+      return activeCurveData[channel].reduce((channelNearest, point) => {
+        const distance = Math.abs(point.time - targetTime);
+        const middleBias = Math.abs(point.time - 0.5);
+        if (
+          !channelNearest ||
+          distance < channelNearest.distance ||
+          (Math.abs(distance - channelNearest.distance) <= POINT_EPSILON && middleBias < channelNearest.middleBias)
+        ) {
+          return { channel, point, distance, middleBias };
+        }
+        return channelNearest;
+      }, nearest);
+    }, null as { channel: Channel; point: CurvePoint; distance: number; middleBias: number } | null);
+  }, [activeCurveData, domainTime, editableChannels, explicitlySelectedCurvePoint]);
+  const focusedPointRef = selectedPoint && explicitlySelectedCurvePoint
+    ? { channel: selectedPoint.channel, point: explicitlySelectedCurvePoint }
+    : fallbackFocusedPoint;
+  const focusedCurvePoint = focusedPointRef?.point ?? null;
+  const focusedPointLabel = focusedPointRef
+    ? `${focusedPointRef.channel.toUpperCase()}:${activeCurveData[focusedPointRef.channel].findIndex(point => point.id === focusedPointRef.point.id) + 1}`
     : 'POINT: NONE';
 
   const horizontalStripGradient = useMemo(() => {
@@ -594,14 +621,15 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
             const { x, y } = curveToScreen(k.time, k.value, computedViewport);
             const canRemove = data.length > 2 && canDeletePoint(k);
             const isSelected = selectedPoint?.channel === channel && selectedPoint.pointId === k.id;
+            const isSoftFocused = !selectedPoint && focusedPointRef?.channel === channel && focusedPointRef.point.id === k.id;
             const isDraggingPoint = isDraggingThis && draggingPoint?.pointId === k.id;
             const radius = isDraggingPoint ? 8 : 6;
             const canMove = canDragPoint(k);
             const isProtected = k.flags.includes('protected');
             const isPreserved = k.flags.includes('uncompressible');
             const markerOpacity = k.role === 'sample' ? 0.62 : 1;
-            const markerStroke = isProtected ? '#f8fafc' : isSelected ? '#ffffff' : '#18181b';
-            const markerStrokeWidth = isProtected || isSelected ? 2.5 : 2;
+            const markerStroke = isProtected ? '#f8fafc' : (isSelected || isSoftFocused) ? '#ffffff' : '#18181b';
+            const markerStrokeWidth = isProtected || isSelected || isSoftFocused ? 2.5 : 2;
             const title = canRemove ? 'Right-click to remove point' : isEdgeOwner(k) ? 'Boundary edge owner' : 'Protected point';
 
             return (
@@ -616,7 +644,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
                     onDoubleClick={(e) => e.stopPropagation()}
                 >
                     <title>{title}</title>
-                    {isSelected && (
+                    {(isSelected || isSoftFocused) && (
                       <circle
                           cx={x}
                           cy={y}
@@ -624,7 +652,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
                           fill="none"
                           stroke="white"
                           strokeWidth={1.25}
-                          opacity={0.72}
+                          opacity={isSelected ? 0.72 : 0.38}
                           style={{ pointerEvents: 'none' }}
                       />
                     )}
@@ -867,20 +895,28 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
           className="flex min-w-0 items-center justify-end gap-1.5 font-mono text-[10px] tracking-wider text-zinc-500"
           style={{ paddingRight: SVG_MARGIN.right }}
         >
+          {curveIndexLabel && (
+            <span
+              className="shrink-0 rounded border border-zinc-800 bg-zinc-950 px-1.5 py-0.5 font-bold text-zinc-300"
+              title={curveIndexTitle}
+            >
+              {curveIndexLabel}
+            </span>
+          )}
           <span className="shrink-0 rounded border border-zinc-800 bg-zinc-950 px-1.5 py-0.5 font-bold text-zinc-300">
-            {selectedPointLabel}
+            {focusedPointLabel}
           </span>
           <span className="shrink-0 rounded border border-zinc-800 bg-zinc-950 px-1.5 py-0.5 text-zinc-400">
-            {selectedCurvePoint?.source.toUpperCase() ?? 'UNSELECTED'}
+            {focusedCurvePoint?.source.toUpperCase() ?? 'UNSELECTED'}
           </span>
           <span className="shrink-0 rounded border border-zinc-800 bg-zinc-950 px-1.5 py-0.5 text-zinc-400">
-            {selectedCurvePoint?.continuity.toUpperCase() ?? 'SMOOTH'}
+            {focusedCurvePoint?.continuity.toUpperCase() ?? 'SMOOTH'}
           </span>
           <span className="shrink-0 text-right text-zinc-400">
-            T <span className="inline-block w-10 text-zinc-300">{(selectedCurvePoint?.time ?? cursorValue?.time ?? 0).toFixed(3)}</span>
+            T <span className="inline-block w-10 text-zinc-300">{(focusedCurvePoint?.time ?? cursorValue?.time ?? 0).toFixed(3)}</span>
           </span>
           <span className="shrink-0 text-right text-zinc-400">
-            V <span className="inline-block w-10 text-zinc-300">{(selectedCurvePoint?.value ?? cursorValue?.value ?? 0).toFixed(3)}</span>
+            V <span className="inline-block w-10 text-zinc-300">{(focusedCurvePoint?.value ?? cursorValue?.value ?? 0).toFixed(3)}</span>
           </span>
         </div>
       </div>

@@ -29,6 +29,7 @@ import {
 } from './state/editorState';
 
 const EXPORT_ATLAS_SIZE = { width: 256, height: 32 };
+const DOMAIN_TIME_DETENT_RADIUS = 0.015;
 
 const initialCurve: ColorCurve = {
   r: migrateKeyframesToCurvePoints([{ time: 0, value: 0 }, { time: 1, value: 1 }]),
@@ -198,6 +199,43 @@ export default function App() {
     ? blendSpaceCurves(spaceCurves, spaceLever, interpMode)
     : initialCurve;
 
+  const activeCurveIndexInfo = useMemo(() => {
+    if (normalizedCategoryCurves.length === 0) return null;
+
+    const nearest = normalizedCategoryCurves.reduce((best, curve, index) => {
+      const distance = Math.abs(curve.position - spaceLever);
+      return distance < best.distance ? { curve, index, distance } : best;
+    }, {
+      curve: normalizedCategoryCurves[0],
+      index: 0,
+      distance: Math.abs(normalizedCategoryCurves[0].position - spaceLever)
+    });
+
+    return {
+      label: `C:${nearest.index + 1}`,
+      title: `${nearest.curve.name} / ${nearest.curve.category} / Y ${nearest.curve.position.toFixed(3)}`
+    };
+  }, [normalizedCategoryCurves, spaceLever]);
+
+  const setAtlasDomainTimeWithDetent = (time: number) => {
+    const clampedTime = Math.max(0, Math.min(1, time));
+    const nearestPoint = (['r', 'g', 'b', 'a'] as Channel[]).reduce((nearest, channel) => {
+      return activeSpaceCurve[channel].reduce((channelNearest, point) => {
+        const distance = Math.abs(point.time - clampedTime);
+        if (!channelNearest || distance < channelNearest.distance) {
+          return { time: point.time, distance };
+        }
+        return channelNearest;
+      }, nearest);
+    }, null as { time: number; distance: number } | null);
+
+    setAtlasDomainTime(
+      nearestPoint && nearestPoint.distance <= DOMAIN_TIME_DETENT_RADIUS
+        ? nearestPoint.time
+        : clampedTime
+    );
+  };
+
   const updateActiveCurve = (newCurve: ColorCurve) => {
     dispatch({ type: 'edit-active-curve', curve: newCurve, newAnchorId: createId('anchor') });
   };
@@ -318,6 +356,8 @@ export default function App() {
           interpMode={interpMode}
           spaceLever={spaceLever}
           domainTime={atlasDomainTime}
+          curveIndexLabel={activeCurveIndexInfo?.label}
+          curveIndexTitle={activeCurveIndexInfo?.title}
           width={Math.max(0, layout.curveEditor.width - 16)}
           height={Math.max(240, layout.curveEditor.height - 72)}
           className={editorClassName}
@@ -333,7 +373,7 @@ export default function App() {
       domainTime={atlasDomainTime}
       activeAnchorId={interaction.type === 'dragging-anchor' ? interaction.anchorId : undefined}
       onSpaceLeverChange={setSpacePosition}
-      onDomainTimeChange={setAtlasDomainTime}
+      onDomainTimeChange={setAtlasDomainTimeWithDetent}
       onAnchorDragStart={startAnchorDrag}
       onAnchorPositionChange={moveAnchor}
       onAnchorDragEnd={endAnchorDrag}
