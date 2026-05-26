@@ -40,6 +40,7 @@ interface CurveEditorProps {
   onSelectedPointChange: (selection: SelectedPointRef | null) => void;
   interpMode: InterpMode;
   spaceLever: number;
+  domainTime?: number;
   width?: number;
   height?: number;
   className?: string;
@@ -101,6 +102,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   onSelectedPointChange,
   interpMode,
   spaceLever,
+  domainTime,
   width,
   height,
   className
@@ -678,6 +680,36 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     );
   };
 
+  const drawDomainTimeGuide = () => {
+    if (domainTime === undefined) return null;
+    if (domainTime < viewMinX || domainTime > viewMaxX) return null;
+
+    const x = timeToX(domainTime, computedViewport, PLOT_RECT);
+
+    return (
+      <g pointerEvents="none">
+        <line
+          x1={x}
+          y1={PLOT_RECT.top}
+          x2={x}
+          y2={PLOT_RECT.bottom}
+          stroke="#f8fafc"
+          strokeWidth="1.5"
+          strokeDasharray="6 6"
+          opacity="0.75"
+        />
+        <circle
+          cx={x}
+          cy={PLOT_RECT.bottom}
+          r="5"
+          fill="#09090b"
+          stroke="#f8fafc"
+          strokeWidth="2"
+        />
+      </g>
+    );
+  };
+
   return (
     <div
       ref={containerRef}
@@ -741,6 +773,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
               onWheel={handleWheel}
             >
               {drawGrid()}
+              {drawDomainTimeGuide()}
               {CHANNELS.map(ch => drawCurve(ch))}
             </svg>
             <div className="absolute right-3 top-3 flex items-center gap-1 rounded-md border border-zinc-800 bg-black/80 p-1 shadow-xl backdrop-blur">

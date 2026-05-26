@@ -7,7 +7,9 @@ interface AtlasViewerProps {
   curves: LibraryCurve[];
   interpMode: InterpMode;
   spaceLever: number;
+  domainTime: number;
   onSpaceLeverChange?: (position: number) => void;
+  onDomainTimeChange?: (position: number) => void;
   onTextureUpdate?: (tex: ImageData) => void;
   onExportAtlas?: () => void;
   canExportAtlas?: boolean;
@@ -19,7 +21,9 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
   curves,
   interpMode,
   spaceLever,
+  domainTime,
   onSpaceLeverChange,
+  onDomainTimeChange,
   onTextureUpdate,
   onExportAtlas,
   canExportAtlas = true,
@@ -31,27 +35,35 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
 
   const deferredCurves = React.useDeferredValue(curves);
 
-  const getSpacePositionFromClientY = (clientY: number) => {
+  const getSelectorPosition = (clientX: number, clientY: number) => {
     const rect = atlasFrameRef.current?.getBoundingClientRect();
-    if (!rect || rect.height === 0) return spaceLever;
-    return Math.max(0, Math.min(1, 1 - ((clientY - rect.top) / rect.height)));
+    if (!rect || rect.width === 0 || rect.height === 0) {
+      return { time: domainTime, space: spaceLever };
+    }
+
+    return {
+      time: Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)),
+      space: Math.max(0, Math.min(1, 1 - ((clientY - rect.top) / rect.height)))
+    };
   };
 
-  const updateSpaceFromPointer = (clientY: number) => {
-    onSpaceLeverChange?.(getSpacePositionFromClientY(clientY));
+  const updateSelectorFromPointer = (clientX: number, clientY: number) => {
+    const next = getSelectorPosition(clientX, clientY);
+    onDomainTimeChange?.(next.time);
+    onSpaceLeverChange?.(next.space);
   };
 
   const handleAtlasPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!onSpaceLeverChange || event.button !== 0) return;
+    if ((!onSpaceLeverChange && !onDomainTimeChange) || event.button !== 0) return;
     event.preventDefault();
-    updateSpaceFromPointer(event.clientY);
+    updateSelectorFromPointer(event.clientX, event.clientY);
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const handleAtlasPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!onSpaceLeverChange || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    if ((!onSpaceLeverChange && !onDomainTimeChange) || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
     event.preventDefault();
-    updateSpaceFromPointer(event.clientY);
+    updateSelectorFromPointer(event.clientX, event.clientY);
   };
 
   const handleAtlasPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -176,13 +188,12 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
               <div 
                 ref={atlasFrameRef}
                 className={`flex-1 relative min-h-[200px] rounded-lg overflow-hidden border border-zinc-800 shadow-inner touch-none ${canvasClassName || 'aspect-[2/1]'}`}
-                role={onSpaceLeverChange ? 'slider' : undefined}
-                aria-label={onSpaceLeverChange ? '2D atlas space index' : undefined}
-                aria-orientation={onSpaceLeverChange ? 'vertical' : undefined}
-                aria-valuemin={onSpaceLeverChange ? 0 : undefined}
-                aria-valuemax={onSpaceLeverChange ? 1 : undefined}
-                aria-valuenow={onSpaceLeverChange ? spaceLever : undefined}
-                tabIndex={onSpaceLeverChange ? 0 : undefined}
+                role={onSpaceLeverChange || onDomainTimeChange ? 'slider' : undefined}
+                aria-label={onSpaceLeverChange || onDomainTimeChange ? '2D atlas XY selector' : undefined}
+                aria-valuemin={onSpaceLeverChange || onDomainTimeChange ? 0 : undefined}
+                aria-valuemax={onSpaceLeverChange || onDomainTimeChange ? 1 : undefined}
+                aria-valuenow={onSpaceLeverChange || onDomainTimeChange ? domainTime : undefined}
+                tabIndex={onSpaceLeverChange || onDomainTimeChange ? 0 : undefined}
                 onPointerDown={handleAtlasPointerDown}
                 onPointerMove={handleAtlasPointerMove}
                 onPointerUp={handleAtlasPointerUp}
@@ -196,6 +207,14 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
                   if (event.key === 'ArrowDown') {
                     event.preventDefault();
                     onSpaceLeverChange(Math.max(0, spaceLever - 0.01));
+                  }
+                  if (event.key === 'ArrowRight') {
+                    event.preventDefault();
+                    onDomainTimeChange?.(Math.min(1, domainTime + 0.01));
+                  }
+                  if (event.key === 'ArrowLeft') {
+                    event.preventDefault();
+                    onDomainTimeChange?.(Math.max(0, domainTime - 0.01));
                   }
                 }}
             style={{
@@ -220,9 +239,22 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
               className="absolute left-0 right-0 h-px bg-white/80 shadow-[0_0_6px_rgba(255,255,255,0.65)] pointer-events-none"
               style={{ top: `${(1 - spaceLever) * 100}%` }}
             />
-            {onSpaceLeverChange && (
+            <div
+              className="absolute bottom-0 top-0 w-px bg-white/80 shadow-[0_0_6px_rgba(255,255,255,0.65)] pointer-events-none"
+              style={{ left: `${domainTime * 100}%` }}
+            />
+            {(onSpaceLeverChange || onDomainTimeChange) && (
+              <div
+                className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-black shadow-[0_0_8px_rgba(255,255,255,0.75)]"
+                style={{
+                  left: `${domainTime * 100}%`,
+                  top: `${(1 - spaceLever) * 100}%`
+                }}
+              />
+            )}
+            {(onSpaceLeverChange || onDomainTimeChange) && (
               <div className="pointer-events-none absolute right-2 top-2 rounded border border-zinc-800 bg-black/60 px-2 py-1 text-[10px] font-mono text-zinc-400">
-                Y {spaceLever.toFixed(3)}
+                X {domainTime.toFixed(3)} / Y {spaceLever.toFixed(3)}
               </div>
             )}
           </div>

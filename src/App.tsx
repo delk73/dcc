@@ -85,6 +85,7 @@ export default function App() {
   const anchorsRef = useRef<LibraryCurve[]>([]);
   
   const [atlasTexture, setAtlasTexture] = useState<ImageData | null>(null);
+  const [atlasDomainTime, setAtlasDomainTime] = useState(0.5);
   const [hasHydrated, setHasHydrated] = useState(false);
 
   const { document: documentState, ui } = editorState;
@@ -403,6 +404,7 @@ export default function App() {
             : dispatch({ type: 'clear-point-selection' })}
           interpMode={interpMode}
           spaceLever={spaceLever}
+          domainTime={atlasDomainTime}
           width={Math.max(0, layout.curveEditor.width - 16)}
           height={Math.max(240, layout.curveEditor.height - 72)}
           className={editorClassName}
@@ -415,7 +417,9 @@ export default function App() {
       curves={normalizedCategoryCurves}
       interpMode={interpMode}
       spaceLever={spaceLever}
+      domainTime={atlasDomainTime}
       onSpaceLeverChange={setSpacePosition}
+      onDomainTimeChange={setAtlasDomainTime}
       onTextureUpdate={setAtlasTexture}
       onExportAtlas={handleExportLibraryLUT}
       canExportAtlas={normalizedCategoryCurves.length > 1}
