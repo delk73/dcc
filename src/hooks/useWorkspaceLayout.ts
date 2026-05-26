@@ -11,17 +11,17 @@ export function useWorkspaceLayout(windowWidth: number, windowHeight: number): C
   const aspectRatio = windowWidth / windowHeight;
   const isWidescreen = aspectRatio >= SPEC_CONSTRAINTS.ASPECT_BREAKPOINT;
 
-  // Rule 1.1: Global state mutations sit at the absolute top ribbon.
-  const modeRibbon: BoundingRect = {
+  // Rule 1.1: Global controls sit at the absolute top header ribbon.
+  const headerRibbon: BoundingRect = {
     x: 0,
     y: 0,
     width: windowWidth,
-    height: SPEC_CONSTRAINTS.RIBBON_HEIGHT,
+    height: SPEC_CONSTRAINTS.HEADER_HEIGHT,
   };
 
-  const workspaceY = SPEC_CONSTRAINTS.RIBBON_HEIGHT;
+  const workspaceY = SPEC_CONSTRAINTS.HEADER_HEIGHT;
   const workspaceHeight =
-    windowHeight - SPEC_CONSTRAINTS.RIBBON_HEIGHT - SPEC_CONSTRAINTS.SLIDER_HEIGHT;
+    windowHeight - SPEC_CONSTRAINTS.HEADER_HEIGHT - SPEC_CONSTRAINTS.SLIDER_HEIGHT;
 
   // Rule 1.4 and Rule 2.3: Channel strip stays vertical on the left border.
   const channelStrip: BoundingRect = {
@@ -34,7 +34,7 @@ export function useWorkspaceLayout(windowWidth: number, windowHeight: number): C
   const availableWidth = windowWidth - SPEC_CONSTRAINTS.CHANNEL_WIDTH;
 
   let curveEditor: BoundingRect;
-  let outputViewport: BoundingRect;
+  let atlasViewport: BoundingRect;
   let spaceSlider: BoundingRect;
 
   if (isWidescreen) {
@@ -48,7 +48,7 @@ export function useWorkspaceLayout(windowWidth: number, windowHeight: number): C
       height: workspaceHeight,
     };
 
-    outputViewport = {
+    atlasViewport = {
       x: SPEC_CONSTRAINTS.CHANNEL_WIDTH + halfWidth,
       y: workspaceY,
       width: halfWidth,
@@ -63,10 +63,10 @@ export function useWorkspaceLayout(windowWidth: number, windowHeight: number): C
       height: SPEC_CONSTRAINTS.SLIDER_HEIGHT,
     };
   } else {
-    // Rule 2.2: Portrait vertical stack. Read-only output top, interactive graph bottom.
+    // Rule 2.2: Portrait vertical stack. Read-only atlas top, interactive graph bottom.
     const halfHeight = Math.floor(workspaceHeight / 2);
 
-    outputViewport = {
+    atlasViewport = {
       x: SPEC_CONSTRAINTS.CHANNEL_WIDTH,
       y: workspaceY,
       width: availableWidth,
@@ -92,9 +92,9 @@ export function useWorkspaceLayout(windowWidth: number, windowHeight: number): C
   return {
     aspectRatio,
     isWidescreen,
-    modeRibbon,
+    headerRibbon,
     channelStrip,
-    outputViewport,
+    atlasViewport,
     curveEditor,
     spaceSlider,
   };

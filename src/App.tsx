@@ -1,12 +1,11 @@
 import React, { useReducer, useState, useEffect, useMemo, useRef } from 'react';
 import { get, set } from 'idb-keyval';
 import { ColorCurve, Channel, CurvePoint, LibraryCurve } from './types';
-import { WorkspaceMode } from './types/layoutSpec';
 import { CurveEditor } from './components/CurveEditor';
 import { CurveImportPanel } from './components/CurveImportPanel';
 import { CurvePreview } from './components/CurvePreview';
 import { PointInspector } from './components/PointInspector';
-import { Download, Layers, RotateCcw, Settings2 } from 'lucide-react';
+import { Download, RotateCcw, Settings2 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { InterpMode, computeTangents, evaluateCurve, blendSpaceCurves } from './lib/curveUtils';
 import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
@@ -57,17 +56,7 @@ const createMinimalBasicSpace = (): LibraryCurve[] => [{
 import { AtlasViewer } from './components/AtlasViewer';
 import type { MainView } from './state/editorState';
 
-const WORKSPACE_MODE_BY_VIEW: Record<MainView, WorkspaceMode> = {
-  curve: '1D',
-  '2d': '2D',
-  '3d': '3D'
-};
-
-const MAIN_VIEW_BY_MODE: Record<WorkspaceMode, MainView> = {
-  '1D': 'curve',
-  '2D': '2d',
-  '3D': '3d'
-};
+const TWO_DIMENSIONAL_WORKSPACE_VIEW: MainView = '2d';
 
 const useWindowDimensions = () => {
   const [dims, setDims] = useState(() => ({
@@ -111,11 +100,17 @@ export default function App() {
     selectedPoint,
     interaction
   } = ui;
-  const spaceLever = levers[mainView];
+  const spaceLever = levers[TWO_DIMENSIONAL_WORKSPACE_VIEW];
 
   const setRawSpacePosition = (val: number) => {
-      dispatch({ type: 'set-space-position', mainView, position: val });
+      dispatch({ type: 'set-space-position', mainView: TWO_DIMENSIONAL_WORKSPACE_VIEW, position: val });
   };
+
+  useEffect(() => {
+    if (mainView !== TWO_DIMENSIONAL_WORKSPACE_VIEW) {
+      dispatch({ type: 'set-main-view', mainView: TWO_DIMENSIONAL_WORKSPACE_VIEW });
+    }
+  }, [mainView]);
 
   // Load from local storage / indexedDB
   useEffect(() => {
@@ -391,31 +386,6 @@ export default function App() {
     dispatch({ type: 'toggle-edit-channel', channel });
   };
 
-  const renderChannelToggles = () => (
-    <div className="flex items-center gap-1 rounded-md border border-zinc-800 bg-black/50 p-1" title="Edit channels">
-      {channelInfo.map((ci) => (
-        <button
-          key={ci.id}
-          type="button"
-          onClick={() => toggleEditChannel(ci.id)}
-          aria-label={`Toggle ${ci.label} editing`}
-          aria-pressed={editChannels[ci.id]}
-          className={cn(
-            "h-7 min-w-9 rounded px-2 text-[10px] font-bold transition-all border flex items-center justify-center gap-1.5",
-            editChannels[ci.id]
-              ? "bg-zinc-800 border-zinc-700 text-white"
-              : "bg-transparent border-transparent text-zinc-600 hover:text-zinc-300 hover:bg-white/5",
-            activeChannel === ci.id && editChannels[ci.id] && "ring-1 ring-white/30"
-          )}
-          title={`${editChannels[ci.id] ? 'Disable' : 'Enable'} ${ci.label} editing`}
-        >
-          <span className={cn("w-1.5 h-1.5 rounded-full", ci.color)} />
-          {ci.label.charAt(0)}
-        </button>
-      ))}
-    </div>
-  );
-
   const renderCurveEditorPanel = (className = '', editorClassName = '') => (
     <div className={cn("bg-[#09090b] border border-zinc-800 rounded-xl p-2 gap-2 min-h-0 flex flex-col", className)}>
        <div className="shrink-0 flex flex-wrap items-center gap-2">
@@ -429,9 +399,6 @@ export default function App() {
             onConvertToAuthored={convertSelectedPointToAuthored}
             dense
           />
-          <div className="ml-auto shrink-0">
-            {renderChannelToggles()}
-          </div>
        </div>
 
        <CurveEditor
@@ -441,10 +408,13 @@ export default function App() {
           editChannels={editChannels}
           selectedPoint={selectedPoint}
           onActiveChannelChange={(channel) => dispatch({ type: 'set-active-channel', channel })}
+          onEditChannelToggle={toggleEditChannel}
           onSelectedPointChange={(selection) => selection
             ? dispatch({ type: 'select-point', selection })
             : dispatch({ type: 'clear-point-selection' })}
           interpMode={interpMode}
+          width={Math.max(0, layout.curveEditor.width - 16)}
+          height={Math.max(240, layout.curveEditor.height - 72)}
           className={editorClassName}
        />
     </div>
@@ -515,55 +485,32 @@ export default function App() {
   return (
     <div className="fixed inset-0 overflow-hidden select-none bg-black text-zinc-100 font-sans selection:bg-indigo-500/30">
       <header
-        data-layout-region="modeRibbon"
+        data-layout-region="headerRibbon"
         style={{
           position: 'fixed',
-          left: layout.modeRibbon.x,
-          top: layout.modeRibbon.y,
-          width: layout.modeRibbon.width,
-          height: layout.modeRibbon.height
+          left: layout.headerRibbon.x,
+          top: layout.headerRibbon.y,
+          width: layout.headerRibbon.width,
+          height: layout.headerRibbon.height
         }}
         className="z-50 flex items-center gap-3 border-b border-white/10 bg-[#09090b]/95 px-3"
       >
         <h1 className="mr-1 shrink-0 text-sm font-bold tracking-tight text-white">Curve Composer</h1>
-
-        <div className="flex h-7 overflow-hidden rounded border border-zinc-800 bg-black">
-          {(['1D', '2D', '3D'] as WorkspaceMode[]).map((mode) => {
-            const view = MAIN_VIEW_BY_MODE[mode];
-            const isActive = mainView === view;
-
-            return (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => dispatch({ type: 'set-main-view', mainView: view })}
-                className={cn(
-                  "min-w-10 border-l border-zinc-800 px-2 text-[11px] font-medium transition-colors first:border-l-0",
-                  isActive ? "bg-white text-black" : "text-zinc-500 hover:text-zinc-200"
-                )}
-              >
-                {mode}
-              </button>
-            );
-          })}
-        </div>
+        <span className="hidden text-[10px] font-mono uppercase tracking-wider text-zinc-600 sm:inline">
+          2D Atlas + 1D Curve / {layout.isWidescreen ? 'Wide' : 'Portrait'}
+        </span>
 
         <div className="ml-auto flex items-center gap-2">
-          <span className="hidden text-[10px] font-mono uppercase tracking-wider text-zinc-600 sm:inline">
-            {WORKSPACE_MODE_BY_VIEW[mainView]} / {layout.isWidescreen ? 'Wide' : 'Portrait'}
-          </span>
-          {mainView === '2d' && (
-            <button
-              type="button"
-              onClick={handleExportLibraryLUT}
-              disabled={normalizedCategoryCurves.length <= 1}
-              className="grid h-7 w-7 place-items-center rounded border border-zinc-800 text-zinc-500 hover:bg-white/10 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
-              title="Export 2D atlas"
-              aria-label="Export 2D atlas"
-            >
-              <Download className="h-4 w-4" />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleExportLibraryLUT}
+            disabled={normalizedCategoryCurves.length <= 1}
+            className="grid h-7 w-7 place-items-center rounded border border-zinc-800 text-zinc-500 hover:bg-white/10 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+            title="Export 2D atlas"
+            aria-label="Export 2D atlas"
+          >
+            <Download className="h-4 w-4" />
+          </button>
           <button
             type="button"
             onClick={resetToMinimalBasicSpace}
@@ -616,63 +563,38 @@ export default function App() {
       </aside>
 
       <section
-        data-layout-region="outputViewport"
+        data-layout-region="atlasViewport"
         style={{
           position: 'fixed',
-          left: layout.outputViewport.x,
-          top: layout.outputViewport.y,
-          width: layout.outputViewport.width,
-          height: layout.outputViewport.height
+          left: layout.atlasViewport.x,
+          top: layout.atlasViewport.y,
+          width: layout.atlasViewport.width,
+          height: layout.atlasViewport.height
         }}
         className="overflow-hidden border-b border-r border-zinc-900 bg-black p-2"
       >
-        {mainView === 'curve' && (
-          <div className="flex h-full min-h-0 flex-col gap-2">
-            <CurvePreview
-              curve={activeSpaceCurve}
-              interpMode={interpMode}
-              textureData={atlasTexture}
-              sampleY={spaceLever}
-              variant="compact"
-              className="shrink-0"
-            />
-            <CurveImportPanel onImport={importCurve} dense className="min-h-0 flex-1" />
-          </div>
-        )}
-
-        {mainView === '2d' && (
-          <div className="flex h-full min-h-0 flex-col gap-2">
-            <AtlasViewer
-              curves={spaceCurves}
-              interpMode={interpMode}
-              spaceLever={spaceLever}
-              onSpaceLeverChange={setSpacePosition}
-              onTextureUpdate={setAtlasTexture}
-              onExportAtlas={handleExportLibraryLUT}
-              canExportAtlas={normalizedCategoryCurves.length > 1}
-              className="min-h-0 flex-1 rounded-none border-zinc-800"
-              canvasClassName="h-full min-h-0"
-            />
-            <CurvePreview
-              curve={activeSpaceCurve}
-              interpMode={interpMode}
-              textureData={atlasTexture}
-              sampleY={spaceLever}
-              variant="slice"
-              className="shrink-0"
-            />
-          </div>
-        )}
-
-        {mainView === '3d' && (
-          <div className="flex h-full flex-col items-center justify-center border border-dashed border-zinc-800 bg-zinc-950 p-8 text-center text-zinc-500">
-            <Layers className="mb-4 h-10 w-10 opacity-30" />
-            <h3 className="text-lg font-medium text-zinc-300">3D Volume Generation</h3>
-            <p className="mt-3 max-w-md text-sm leading-relaxed">
-              Generate entire sets of variant spaces to build a fully procedural Volume texture.
-            </p>
-          </div>
-        )}
+        <div className="flex h-full min-h-0 flex-col gap-2">
+          <AtlasViewer
+            curves={spaceCurves}
+            interpMode={interpMode}
+            spaceLever={spaceLever}
+            onSpaceLeverChange={setSpacePosition}
+            onTextureUpdate={setAtlasTexture}
+            onExportAtlas={handleExportLibraryLUT}
+            canExportAtlas={normalizedCategoryCurves.length > 1}
+            className="min-h-0 flex-1 rounded-none border-zinc-800"
+            canvasClassName="h-full min-h-0"
+          />
+          <CurvePreview
+            curve={activeSpaceCurve}
+            interpMode={interpMode}
+            textureData={atlasTexture}
+            sampleY={spaceLever}
+            variant="slice"
+            className="shrink-0"
+          />
+          <CurveImportPanel onImport={importCurve} dense className="min-h-0 max-h-40 shrink-0" />
+        </div>
       </section>
 
       <main

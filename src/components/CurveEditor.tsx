@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Maximize2, Minus, Plus } from 'lucide-react';
 import { ColorCurve, Channel, ChannelMask, CurvePoint } from '../types';
 import { cn } from '../lib/utils';
@@ -35,13 +35,18 @@ interface CurveEditorProps {
   editChannels: ChannelMask;
   selectedPoint: SelectedPointRef | null;
   onActiveChannelChange: (channel: Channel) => void;
+  onEditChannelToggle?: (channel: Channel) => void;
   onSelectedPointChange: (selection: SelectedPointRef | null) => void;
   interpMode: InterpMode;
+  width?: number;
+  height?: number;
   className?: string;
 }
 
 const WIDTH = 1000;
 const HEIGHT = 500;
+const PREVIEW_STRIP_HEIGHT = 24;
+const CONTROL_BAR_HEIGHT = 36;
 
 const SVG_MARGIN = { top: 20, right: 20, bottom: 20, left: 20 };
 const INNER_WIDTH = WIDTH - SVG_MARGIN.left - SVG_MARGIN.right;
@@ -90,8 +95,11 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   editChannels,
   selectedPoint,
   onActiveChannelChange,
+  onEditChannelToggle,
   onSelectedPointChange,
   interpMode,
+  width,
+  height,
   className
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -111,6 +119,42 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
 
   const activeCurveData = draggingPoint ? localCurve : curve;
   const editableChannels = CHANNELS.filter(channel => editChannels[channel]);
+  const boundedWidth = width && width > 0 ? width : undefined;
+  const boundedHeight = height && height > 0 ? height : undefined;
+
+  const horizontalStripGradient = useMemo(() => {
+    const sortedCurve = {
+      r: [...curve.r].sort((a, b) => a.time - b.time),
+      g: [...curve.g].sort((a, b) => a.time - b.time),
+      b: [...curve.b].sort((a, b) => a.time - b.time),
+    };
+
+    const tangents = {
+      r: computeTangents(sortedCurve.r),
+      g: computeTangents(sortedCurve.g),
+      b: computeTangents(sortedCurve.b),
+    };
+
+    const stops: string[] = [];
+    const steps = 20;
+
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const r = Math.round(
+        Math.max(0, Math.min(1, evaluateCurve(sortedCurve.r, tangents.r, t, interpMode))) * 255
+      );
+      const g = Math.round(
+        Math.max(0, Math.min(1, evaluateCurve(sortedCurve.g, tangents.g, t, interpMode))) * 255
+      );
+      const b = Math.round(
+        Math.max(0, Math.min(1, evaluateCurve(sortedCurve.b, tangents.b, t, interpMode))) * 255
+      );
+
+      stops.push(`rgb(${r},${g},${b}) ${t * 100}%`);
+    }
+
+    return `linear-gradient(to right, ${stops.join(', ')})`;
+  }, [curve, interpMode]);
 
   useEffect(() => {
     viewportRef.current = viewport;
@@ -677,9 +721,13 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   return (
     <div
       ref={containerRef}
+      style={{
+        width: boundedWidth,
+        height: boundedHeight,
+      }}
       className={cn(
-        "w-full min-h-[200px] relative select-none rounded-xl bg-[#09090b] border border-zinc-800 overflow-hidden shadow-2xl outline-none",
-        className ?? "aspect-[2/1]"
+        "w-full min-h-[240px] relative select-none rounded-xl bg-[#09090b] border border-zinc-800 overflow-hidden shadow-2xl outline-none p-2 flex flex-col gap-2",
+        className ?? "h-full"
       )}
       tabIndex={0}
       onKeyDown={handleKeyDown}
@@ -690,56 +738,113 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
         panGestureRef.current = null;
       }}
     >
-      <svg
-        ref={svgRef}
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-        className={cn("w-full h-full touch-none", isPanning ? "cursor-grabbing" : isSpacePressed ? "cursor-grab" : "cursor-crosshair")}
-        onPointerDown={handleSvgPointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerLeave={handlePointerUp}
-        onPointerCancel={handlePointerUp}
-        onDoubleClick={handleSvgDoubleClick}
+      <div
+        style={{ height: PREVIEW_STRIP_HEIGHT }}
+        className="relative w-full shrink-0 overflow-hidden rounded border border-zinc-800/80 opacity-90 shadow-inner"
       >
-        {drawGrid()}
-        {CHANNELS.map(ch => drawCurve(ch))}
-      </svg>
-      <div className="absolute top-3 right-3 flex items-center gap-1 rounded-md border border-zinc-800 bg-black/80 p-1 shadow-xl backdrop-blur">
-        <button
-          type="button"
-          title="Zoom out"
-          aria-label="Zoom out"
-          onClick={() => applyZoom(1.25, 1.25)}
-          className="grid h-7 w-7 place-items-center rounded text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
-        >
-          <Minus className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          title="Fit view"
-          aria-label="Fit view"
-          onClick={() => scheduleViewport(DEFAULT_CURVE_VIEWPORT)}
-          className="grid h-7 w-7 place-items-center rounded text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
-        >
-          <Maximize2 className="h-4 w-4" />
-        </button>
-        <button
-          type="button"
-          title="Zoom in"
-          aria-label="Zoom in"
-          onClick={() => applyZoom(0.8, 0.8)}
-          className="grid h-7 w-7 place-items-center rounded text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
-        >
-          <Plus className="h-4 w-4" />
-        </button>
+        <div className="absolute inset-0" style={{ background: horizontalStripGradient }} />
+        <div className="pointer-events-none absolute bottom-0 left-2 top-0 flex items-center">
+          <span className="rounded bg-white/20 px-1 font-mono text-[9px] font-bold tracking-widest text-black mix-blend-difference">
+            1D COLOR PREVIEW
+          </span>
+        </div>
       </div>
-      <div className="absolute bottom-3 left-3 text-[10px] text-zinc-500 font-mono pointer-events-none drop-shadow-md">
-        Wheel zoom &bull; Shift/Alt axis zoom &bull; Space or middle drag pan
+
+      <div className="relative min-h-0 flex-1 overflow-hidden rounded border border-zinc-900/80 bg-[#09090b]">
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+          className={cn("absolute inset-0 h-full w-full touch-none", isPanning ? "cursor-grabbing" : isSpacePressed ? "cursor-grab" : "cursor-crosshair")}
+          onPointerDown={handleSvgPointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerLeave={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          onDoubleClick={handleSvgDoubleClick}
+        >
+          {drawGrid()}
+          {CHANNELS.map(ch => drawCurve(ch))}
+        </svg>
+        <div className="absolute right-3 top-3 flex items-center gap-1 rounded-md border border-zinc-800 bg-black/80 p-1 shadow-xl backdrop-blur">
+          <button
+            type="button"
+            title="Zoom out"
+            aria-label="Zoom out"
+            onClick={() => applyZoom(1.25, 1.25)}
+            className="grid h-7 w-7 place-items-center rounded text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+          >
+            <Minus className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            title="Fit view"
+            aria-label="Fit view"
+            onClick={() => scheduleViewport(DEFAULT_CURVE_VIEWPORT)}
+            className="grid h-7 w-7 place-items-center rounded text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+          >
+            <Maximize2 className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            title="Zoom in"
+            aria-label="Zoom in"
+            onClick={() => applyZoom(0.8, 0.8)}
+            className="grid h-7 w-7 place-items-center rounded text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="pointer-events-none absolute bottom-3 left-3 font-mono text-[10px] text-zinc-500 drop-shadow-md">
+          Wheel zoom &bull; Shift/Alt axis zoom &bull; Space or middle drag pan
+        </div>
+        <div className="pointer-events-none absolute bottom-3 right-3 font-mono text-[10px] text-zinc-500 drop-shadow-md">
+          {cursorValue
+            ? `T ${cursorValue.time.toFixed(3)}  V ${cursorValue.value.toFixed(3)}`
+            : 'Double-click add point'}
+        </div>
       </div>
-      <div className="absolute bottom-3 right-3 text-[10px] text-zinc-500 font-mono pointer-events-none drop-shadow-md">
-        {cursorValue
-          ? `T ${cursorValue.time.toFixed(3)}  V ${cursorValue.value.toFixed(3)}`
-          : 'Double-click add point'}
+
+      <div
+        style={{ height: CONTROL_BAR_HEIGHT }}
+        className="flex w-full shrink-0 items-center justify-between gap-3 border-t border-zinc-900/80 pt-1"
+      >
+        <div className="flex items-center gap-1 rounded border border-zinc-950 bg-zinc-900/40 p-0.5">
+          {CHANNELS.map((channel) => {
+            const isActive = activeChannel === channel;
+            const isEditable = editChannels[channel];
+
+            return (
+              <button
+                key={channel}
+                type="button"
+                onClick={() => {
+                  onActiveChannelChange(channel);
+                  onEditChannelToggle?.(channel);
+                }}
+                aria-label={`Toggle ${channel.toUpperCase()} editing`}
+                aria-pressed={isEditable}
+                className={cn(
+                  "flex h-6 min-w-8 items-center justify-center gap-1 rounded border px-1.5 font-mono text-[10px] font-bold transition-colors",
+                  isActive
+                    ? "border-white bg-white text-black"
+                    : "border-transparent bg-transparent text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300",
+                  !isEditable && "opacity-45"
+                )}
+                title={`${isEditable ? 'Disable' : 'Enable'} ${channel.toUpperCase()} editing`}
+              >
+                <span
+                  className="h-1 w-1 rounded-full"
+                  style={{ backgroundColor: CHANNEL_COLORS[channel] }}
+                />
+                {channel.toUpperCase()}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="truncate text-right font-mono text-[10px] tracking-wider text-zinc-500">
+          DOMAIN: <span className="font-bold text-zinc-400">[ 0.000 ] - [ 1.000 ]</span>
+        </div>
       </div>
     </div>
   );

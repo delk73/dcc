@@ -18,9 +18,9 @@ function executeComplianceSuite() {
     throw new Error('FAIL: 2560x1440 viewport incorrectly calculated as portrait layout.');
   }
 
-  if (wideLayout.curveEditor.x >= wideLayout.outputViewport.x) {
+  if (wideLayout.curveEditor.x >= wideLayout.atlasViewport.x) {
     throw new Error(
-      'FAIL [Rule 2.1]: In widescreen, CurveEditor must sit to the left of the OutputViewport column.'
+      'FAIL [Rule 2.1]: In widescreen, CurveEditor must sit to the left of the AtlasViewport column.'
     );
   }
   console.log('-> [PASS] Rule 2.1: Widescreen side-by-side partition validated.');
@@ -33,10 +33,10 @@ function executeComplianceSuite() {
     throw new Error('FAIL: 1080x1920 viewport incorrectly calculated as widescreen layout.');
   }
 
-  const outputBottomY = portraitLayout.outputViewport.y + portraitLayout.outputViewport.height;
-  if (portraitLayout.curveEditor.y < outputBottomY) {
+  const atlasBottomY = portraitLayout.atlasViewport.y + portraitLayout.atlasViewport.height;
+  if (portraitLayout.curveEditor.y < atlasBottomY) {
     throw new Error(
-      'FAIL [Rule 2.2]: In portrait, highly interactive CurveEditor must drop completely below the read-only OutputViewport.'
+      'FAIL [Rule 2.2]: In portrait, highly interactive CurveEditor must drop completely below the read-only AtlasViewport.'
     );
   }
   console.log('-> [PASS] Rule 2.2: Portrait anti-occlusion stack order validated.');
