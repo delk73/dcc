@@ -23,7 +23,7 @@ export function useWorkspaceLayout(windowWidth: number, windowHeight: number): C
   const workspaceHeight =
     windowHeight - SPEC_CONSTRAINTS.HEADER_HEIGHT - SPEC_CONSTRAINTS.SLIDER_HEIGHT;
 
-  // Rule 1.4 and Rule 2.3: Channel strip stays vertical on the left border.
+  // Rule 1.4: Channel controls are local to the curve editor in Rev 2.0.
   const channelStrip: BoundingRect = {
     x: 0,
     y: workspaceY,

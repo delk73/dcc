@@ -10,8 +10,7 @@
  * and 2D Atlas Viewer are visible simultaneously across all display profiles.
  * - [Rule 1.3] High-frequency interactive controls (`SpaceSlider`) remain anchored
  * below index lines to preserve open lines of sight.
- * - [Rule 1.4] Color channel filters (`ChannelStrip`) form a fixed vertical boundary
- * column along the left edge of the screen frame.
+ * - [Rule 1.4] Color channel filters are local to the curve editor controls.
  *
  * ## 2. Aspect Ratio Reflow (Best-Fit Model)
  * - [Rule 2.1] Widescreen (Aspect >= 1.0): Viewports partition side-by-side as distinct halves.
@@ -41,7 +40,7 @@ export interface ComputedLayout {
 // Immutable layout sizing primitives matching SPEC-UI-001 Rev 2.0.
 export const SPEC_CONSTRAINTS = {
   HEADER_HEIGHT: 40,
-  CHANNEL_WIDTH: 48,
+  CHANNEL_WIDTH: 0,
   SLIDER_HEIGHT: 32,
   ASPECT_BREAKPOINT: 1.0,
 } as const;

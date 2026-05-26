@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Maximize2, Minus, Plus } from 'lucide-react';
 import { ColorCurve, Channel, ChannelMask, CurvePoint } from '../types';
 import { cn } from '../lib/utils';
@@ -6,14 +6,10 @@ import { computeTangents, evaluateCurve, InterpMode } from '../lib/curveUtils';
 import {
   DEFAULT_CURVE_VIEWPORT,
   buildTicks,
-  clampViewport,
-  panViewport,
-  screenDeltaToCurveDelta,
   timeToX,
   valueToY,
   xToTime,
   yToValue,
-  zoomViewport,
   type CurveViewport,
   type PlotRect
 } from '../lib/curveViewport';
@@ -31,13 +27,13 @@ import {
 interface CurveEditorProps {
   curve: ColorCurve;
   onChange: (curve: ColorCurve) => void;
-  activeChannel: Channel;
   editChannels: ChannelMask;
   selectedPoint: SelectedPointRef | null;
   onActiveChannelChange: (channel: Channel) => void;
-  onEditChannelToggle?: (channel: Channel) => void;
+  onEditChannelToggle: (channel: Channel) => void;
   onSelectedPointChange: (selection: SelectedPointRef | null) => void;
   interpMode: InterpMode;
+  spaceLever: number;
   width?: number;
   height?: number;
   className?: string;
@@ -51,6 +47,10 @@ const CONTROL_BAR_HEIGHT = 36;
 const SVG_MARGIN = { top: 20, right: 20, bottom: 20, left: 20 };
 const INNER_WIDTH = WIDTH - SVG_MARGIN.left - SVG_MARGIN.right;
 const INNER_HEIGHT = HEIGHT - SVG_MARGIN.top - SVG_MARGIN.bottom;
+const PREVIEW_INSET = {
+  left: `${(SVG_MARGIN.left / WIDTH) * 100}%`,
+  right: `${(SVG_MARGIN.right / WIDTH) * 100}%`,
+};
 const PLOT_RECT: PlotRect = {
   left: SVG_MARGIN.left,
   top: SVG_MARGIN.top,
@@ -73,6 +73,9 @@ const POINT_HIT_RADIUS = 12;
 const CHANNELS: Channel[] = ['r', 'g', 'b', 'a'];
 const isEdgeOwner = (point: CurvePoint) => getEdgeOwner(point) === 'start' || getEdgeOwner(point) === 'end';
 const WHEEL_ZOOM_INTENSITY = 0.0015;
+const MIN_ZOOM_X = 1;
+const MAX_ZOOM_X = 32;
+const ZOOM_BUTTON_FACTOR = 1.25;
 type DragGesture = {
   channel: Channel;
   pointId: string;
@@ -81,23 +84,16 @@ type DragGesture = {
   hasMoved: boolean;
 };
 
-type PanGesture = {
-  pointerId: number;
-  lastClientX: number;
-  lastClientY: number;
-  hasMoved: boolean;
-};
-
 export const CurveEditor: React.FC<CurveEditorProps> = ({
   curve,
   onChange,
-  activeChannel,
   editChannels,
   selectedPoint,
   onActiveChannelChange,
   onEditChannelToggle,
   onSelectedPointChange,
   interpMode,
+  spaceLever,
   width,
   height,
   className
@@ -106,125 +102,96 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   const svgRef = useRef<SVGSVGElement>(null);
   const [draggingPoint, setDraggingPoint] = useState<{ channel: Channel, pointId: string } | null>(null);
   const [localCurve, setLocalCurve] = useState<ColorCurve>(curve);
-  const [viewport, setViewport] = useState<CurveViewport>(DEFAULT_CURVE_VIEWPORT);
-  const [isSpacePressed, setIsSpacePressed] = useState(false);
-  const [isPanning, setIsPanning] = useState(false);
+  const [zoomX, setZoomX] = useState(MIN_ZOOM_X);
+  const [zoomAnchor, setZoomAnchor] = useState({ time: spaceLever, ratio: 0.5 });
   const [cursorValue, setCursorValue] = useState<{ time: number; value: number } | null>(null);
   const liveCurveRef = useRef<ColorCurve>(curve);
   const dragGestureRef = useRef<DragGesture | null>(null);
-  const viewportRef = useRef<CurveViewport>(DEFAULT_CURVE_VIEWPORT);
-  const viewportFrameRef = useRef<number | null>(null);
-  const queuedViewportRef = useRef<CurveViewport | null>(null);
-  const panGestureRef = useRef<PanGesture | null>(null);
+  const latestCursorAnchorRef = useRef({ time: spaceLever, ratio: 0.5 });
 
   const activeCurveData = draggingPoint ? localCurve : curve;
   const editableChannels = CHANNELS.filter(channel => editChannels[channel]);
   const boundedWidth = width && width > 0 ? width : undefined;
   const boundedHeight = height && height > 0 ? height : undefined;
 
+  const computedViewport = useMemo<CurveViewport>(() => {
+    const anchorTime = Math.max(0, Math.min(1, zoomAnchor.time));
+    const anchorRatio = Math.max(0, Math.min(1, zoomAnchor.ratio));
+    const visibleWidth = 1 / zoomX;
+    let minX = anchorTime - (visibleWidth * anchorRatio);
+    let maxX = minX + visibleWidth;
+
+    if (minX < 0) {
+      maxX += -minX;
+      minX = 0;
+    }
+    if (maxX > 1) {
+      minX -= maxX - 1;
+      maxX = 1;
+    }
+
+    return {
+      ...DEFAULT_CURVE_VIEWPORT,
+      timeMin: Math.max(0, minX),
+      timeMax: Math.min(1, maxX),
+    };
+  }, [zoomAnchor, zoomX]);
+
+  const viewMinX = computedViewport.timeMin;
+  const viewMaxX = computedViewport.timeMax;
+
   const horizontalStripGradient = useMemo(() => {
     const sortedCurve = {
       r: [...curve.r].sort((a, b) => a.time - b.time),
       g: [...curve.g].sort((a, b) => a.time - b.time),
       b: [...curve.b].sort((a, b) => a.time - b.time),
+      a: [...curve.a].sort((a, b) => a.time - b.time),
     };
 
     const tangents = {
       r: computeTangents(sortedCurve.r),
       g: computeTangents(sortedCurve.g),
       b: computeTangents(sortedCurve.b),
+      a: computeTangents(sortedCurve.a),
     };
 
     const stops: string[] = [];
-    const steps = 20;
+    const steps = 30;
+    const visibleDomainWidth = viewMaxX - viewMinX;
 
     for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
+      const localT = i / steps;
+      const targetTime = viewMinX + (localT * visibleDomainWidth);
       const r = Math.round(
-        Math.max(0, Math.min(1, evaluateCurve(sortedCurve.r, tangents.r, t, interpMode))) * 255
+        Math.max(0, Math.min(1, evaluateCurve(sortedCurve.r, tangents.r, targetTime, interpMode))) * 255
       );
       const g = Math.round(
-        Math.max(0, Math.min(1, evaluateCurve(sortedCurve.g, tangents.g, t, interpMode))) * 255
+        Math.max(0, Math.min(1, evaluateCurve(sortedCurve.g, tangents.g, targetTime, interpMode))) * 255
       );
       const b = Math.round(
-        Math.max(0, Math.min(1, evaluateCurve(sortedCurve.b, tangents.b, t, interpMode))) * 255
+        Math.max(0, Math.min(1, evaluateCurve(sortedCurve.b, tangents.b, targetTime, interpMode))) * 255
       );
+      const a = Math.max(0, Math.min(1, evaluateCurve(sortedCurve.a, tangents.a, targetTime, interpMode)));
 
-      stops.push(`rgb(${r},${g},${b}) ${t * 100}%`);
+      stops.push(`rgba(${r},${g},${b},${a}) ${localT * 100}%`);
     }
 
     return `linear-gradient(to right, ${stops.join(', ')})`;
-  }, [curve, interpMode]);
+  }, [curve, interpMode, viewMaxX, viewMinX]);
 
-  useEffect(() => {
-    viewportRef.current = viewport;
-  }, [viewport]);
-
-  useEffect(() => {
-    return () => {
-      if (viewportFrameRef.current !== null) {
-        cancelAnimationFrame(viewportFrameRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const handleNativeWheel = (event: WheelEvent) => {
-      if (!container.contains(event.target as Node)) return;
-      event.preventDefault();
-
-      const point = getSvgPoint(event.clientX, event.clientY);
-      if (!point || event.deltaY === 0) return;
-
-      const anchor = {
-        time: xToTime(point.x, viewportRef.current, PLOT_RECT),
-        value: viewportRef.current.valueMin + ((PLOT_RECT.bottom - point.y) / PLOT_RECT.height) * (viewportRef.current.valueMax - viewportRef.current.valueMin)
-      };
-      const scale = Math.exp(event.deltaY * WHEEL_ZOOM_INTENSITY);
-      const zoomX = event.altKey ? 1 : scale;
-      const zoomY = event.shiftKey ? 1 : scale;
-      applyZoom(zoomX, zoomY, anchor);
-    };
-
-    container.addEventListener('wheel', handleNativeWheel, { passive: false });
-    return () => container.removeEventListener('wheel', handleNativeWheel);
-  });
-
-  const scheduleViewport = (nextViewport: CurveViewport) => {
-    const clamped = clampViewport(nextViewport);
-    queuedViewportRef.current = clamped;
-    viewportRef.current = clamped;
-
-    if (viewportFrameRef.current !== null) return;
-    viewportFrameRef.current = requestAnimationFrame(() => {
-      viewportFrameRef.current = null;
-      const queued = queuedViewportRef.current;
-      if (!queued) return;
-      queuedViewportRef.current = null;
-      setViewport(queued);
-    });
-  };
-
-  const curveToScreen = (time: number, value: number, sourceViewport = viewportRef.current) => ({
+  const curveToScreen = (time: number, value: number, sourceViewport = computedViewport) => ({
     x: timeToX(time, sourceViewport, PLOT_RECT),
     y: valueToY(value, sourceViewport, PLOT_RECT)
   });
 
-  const screenToCurve = (point: { x: number; y: number }, sourceViewport = viewportRef.current) => ({
+  const screenToCurve = (point: { x: number; y: number }, sourceViewport = computedViewport) => ({
     time: xToTime(point.x, sourceViewport, PLOT_RECT),
     value: yToValue(point.y, sourceViewport, PLOT_RECT)
   });
 
-  const applyZoom = (scaleX: number, scaleY: number, anchor?: { time: number; value: number }) => {
-    const currentViewport = viewportRef.current;
-    const zoomAnchor = anchor ?? {
-      time: (currentViewport.timeMin + currentViewport.timeMax) / 2,
-      value: (currentViewport.valueMin + currentViewport.valueMax) / 2
-    };
-    scheduleViewport(zoomViewport(currentViewport, zoomAnchor, scaleX, scaleY));
+  const adjustZoom = (factor: number) => {
+    setZoomAnchor(latestCursorAnchorRef.current);
+    setZoomX((currentZoom) => Math.max(MIN_ZOOM_X, Math.min(MAX_ZOOM_X, currentZoom * factor)));
   };
 
   const handlePointerDown = (e: React.PointerEvent<SVGElement>, channel: Channel, pointIndex: number) => {
@@ -248,22 +215,6 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     (e.target as Element).setPointerCapture(e.pointerId);
   };
 
-  const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (draggingPoint) return;
-    const shouldPan = e.button === 1 || (e.button === 0 && isSpacePressed);
-    if (!shouldPan) return;
-
-    e.preventDefault();
-    panGestureRef.current = {
-      pointerId: e.pointerId,
-      lastClientX: e.clientX,
-      lastClientY: e.clientY,
-      hasMoved: false
-    };
-    setIsPanning(true);
-    e.currentTarget.setPointerCapture(e.pointerId);
-  };
-
   const getSvgPoint = (clientX: number, clientY: number) => {
     if (!svgRef.current) return null;
     const ctm = svgRef.current.getScreenCTM();
@@ -273,6 +224,26 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
       x: (clientX - ctm.e) / ctm.a,
       y: (clientY - ctm.f) / ctm.d
     };
+  };
+
+  const getPlotRatio = (x: number) =>
+    Math.max(0, Math.min(1, (x - PLOT_RECT.left) / PLOT_RECT.width));
+
+  const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
+    if (event.deltaY === 0) return;
+    event.preventDefault();
+
+    const svgPoint = getSvgPoint(event.clientX, event.clientY);
+    if (svgPoint) {
+      setZoomAnchor({
+        time: screenToCurve(svgPoint).time,
+        ratio: getPlotRatio(svgPoint.x),
+      });
+    }
+
+    setZoomX((currentZoom) =>
+      Math.max(MIN_ZOOM_X, Math.min(MAX_ZOOM_X, currentZoom * Math.exp(-event.deltaY * WHEEL_ZOOM_INTENSITY)))
+    );
   };
 
   const detectEditableChannel = (time: number, value: number) => {
@@ -310,23 +281,12 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     const svgPoint = getSvgPoint(e.clientX, e.clientY);
     if (svgPoint) {
-      setCursorValue(screenToCurve(svgPoint));
-    }
-
-    const panGesture = panGestureRef.current;
-    if (panGesture && panGesture.pointerId === e.pointerId) {
-      e.preventDefault();
-      const dx = e.clientX - panGesture.lastClientX;
-      const dy = e.clientY - panGesture.lastClientY;
-      const delta = screenDeltaToCurveDelta(dx, dy, viewportRef.current, PLOT_RECT);
-      panGestureRef.current = {
-        ...panGesture,
-        lastClientX: e.clientX,
-        lastClientY: e.clientY,
-        hasMoved: panGesture.hasMoved || Math.sqrt(dx * dx + dy * dy) >= DRAG_THRESHOLD_PX
+      const nextCursorValue = screenToCurve(svgPoint);
+      setCursorValue(nextCursorValue);
+      latestCursorAnchorRef.current = {
+        time: nextCursorValue.time,
+        ratio: getPlotRatio(svgPoint.x),
       };
-      scheduleViewport(panViewport(viewportRef.current, delta.time, delta.value));
-      return;
     }
 
     if (!draggingPoint || !svgRef.current) return;
@@ -377,14 +337,6 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   };
 
   const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (panGestureRef.current?.pointerId === e.pointerId) {
-      if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
-        e.currentTarget.releasePointerCapture(e.pointerId);
-      }
-      panGestureRef.current = null;
-      setIsPanning(false);
-    }
-
     if (draggingPoint) {
       const target = e.target as Element;
       if (target.hasPointerCapture?.(e.pointerId)) {
@@ -410,7 +362,6 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   };
 
   const handleSvgDoubleClick = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (panGestureRef.current?.hasMoved) return;
     const point = getSvgPoint(e.clientX, e.clientY);
     if (!point) return;
 
@@ -480,23 +431,11 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     onChange(newCurve);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.code !== 'Space') return;
-    e.preventDefault();
-    setIsSpacePressed(true);
-  };
-
-  const handleKeyUp = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.code !== 'Space') return;
-    e.preventDefault();
-    setIsSpacePressed(false);
-  };
-
   const drawGrid = () => {
     const lines = [];
 
-    for (const tick of buildTicks(viewport.valueMin, viewport.valueMax, 4)) {
-      const y = valueToY(tick.value, viewport, PLOT_RECT);
+    for (const tick of buildTicks(computedViewport.valueMin, computedViewport.valueMax, 4)) {
+      const y = valueToY(tick.value, computedViewport, PLOT_RECT);
       const isOne = Math.abs(tick.value - 1) < POINT_EPSILON;
 
       lines.push(
@@ -520,27 +459,31 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
       }
     }
 
-    for (const tick of buildTicks(viewport.timeMin, viewport.timeMax, 5)) {
-      const x = timeToX(tick.value, viewport, PLOT_RECT);
+    const tickSpacing = zoomX > 16 ? 0.01 : zoomX > 8 ? 0.02 : zoomX > 4 ? 0.05 : 0.1;
+    const firstTick = Math.ceil(viewMinX / tickSpacing) * tickSpacing;
+
+    for (let tickValue = firstTick; tickValue <= viewMaxX + tickSpacing * 0.5; tickValue += tickSpacing) {
+      const roundedTick = Number(tickValue.toFixed(4));
+      if (roundedTick < viewMinX - POINT_EPSILON || roundedTick > viewMaxX + POINT_EPSILON) continue;
+      const x = timeToX(roundedTick, computedViewport, PLOT_RECT);
+      const labelPrecision = tickSpacing < 0.1 ? 2 : 1;
 
       lines.push(
         <line
-          key={`v-${tick.value}`}
+          key={`v-${roundedTick}`}
           x1={x}
           y1={PLOT_RECT.top}
           x2={x}
           y2={PLOT_RECT.bottom}
-          stroke={tick.major ? '#3f3f46' : '#27272a'}
+          stroke="#3f3f46"
           strokeWidth={1}
         />
       );
-      if (tick.major) {
-        lines.push(
-          <text key={`vt-${tick.value}`} x={x} y={PLOT_RECT.bottom + 15} fill="#a1a1aa" fontSize="12" textAnchor="middle">
-            {tick.label}
-          </text>
-        );
-      }
+      lines.push(
+        <text key={`vt-${roundedTick}`} x={x} y={PLOT_RECT.bottom + 15} fill="#a1a1aa" fontSize="12" textAnchor="middle">
+          {roundedTick.toFixed(labelPrecision)}
+        </text>
+      );
     }
     return lines;
   };
@@ -554,7 +497,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     
     let pathD = '';
     if (sortedData.length > 0) {
-      pathD += `M ${timeToX(sortedData[0].time, viewport, PLOT_RECT)},${valueToY(sortedData[0].value, viewport, PLOT_RECT)} `;
+      pathD += `M ${timeToX(sortedData[0].time, computedViewport, PLOT_RECT)},${valueToY(sortedData[0].value, computedViewport, PLOT_RECT)} `;
       
       const tangents = computeTangents(sortedData);
       
@@ -564,9 +507,9 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
         
         const segmentInterpolation = getOutgoingInterpolation(k0);
         if (segmentInterpolation === 'constant') {
-          pathD += `L ${timeToX(k1.time, viewport, PLOT_RECT)},${valueToY(k0.value, viewport, PLOT_RECT)} L ${timeToX(k1.time, viewport, PLOT_RECT)},${valueToY(k1.value, viewport, PLOT_RECT)} `;
+          pathD += `L ${timeToX(k1.time, computedViewport, PLOT_RECT)},${valueToY(k0.value, computedViewport, PLOT_RECT)} L ${timeToX(k1.time, computedViewport, PLOT_RECT)},${valueToY(k1.value, computedViewport, PLOT_RECT)} `;
         } else if (segmentInterpolation === 'linear') {
-          pathD += `L ${timeToX(k1.time, viewport, PLOT_RECT)},${valueToY(k1.value, viewport, PLOT_RECT)} `;
+          pathD += `L ${timeToX(k1.time, computedViewport, PLOT_RECT)},${valueToY(k1.value, computedViewport, PLOT_RECT)} `;
         } else {
           const dx = k1.time - k0.time;
           const m0 = tangents[i];
@@ -578,30 +521,29 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
           const cp2_t = k1.time - dx / 3;
           const cp2_v = k1.value - m1 * (dx / 3);
           
-          pathD += `C ${timeToX(cp1_t, viewport, PLOT_RECT)},${valueToY(cp1_v, viewport, PLOT_RECT)} ${timeToX(cp2_t, viewport, PLOT_RECT)},${valueToY(cp2_v, viewport, PLOT_RECT)} ${timeToX(k1.time, viewport, PLOT_RECT)},${valueToY(k1.value, viewport, PLOT_RECT)} `;
+          pathD += `C ${timeToX(cp1_t, computedViewport, PLOT_RECT)},${valueToY(cp1_v, computedViewport, PLOT_RECT)} ${timeToX(cp2_t, computedViewport, PLOT_RECT)},${valueToY(cp2_v, computedViewport, PLOT_RECT)} ${timeToX(k1.time, computedViewport, PLOT_RECT)},${valueToY(k1.value, computedViewport, PLOT_RECT)} `;
         }
       }
     }
     
-    const isActive = activeChannel === channel;
     const isDraggingThis = draggingPoint?.channel === channel;
     const isEditable = editChannels[channel];
     const showPoints = isEditable;
     const strokeOpacity = isEditable ? 1 : 0.3;
-    const strokeWidth = isActive ? 3 : isEditable ? 2 : 1.25;
+    const strokeWidth = isEditable ? 2 : 1.25;
 
     const startBoundary = data.find(point => getEdgeOwner(point) === 'start') ?? data[0];
     const endBoundary = data.find(point => getEdgeOwner(point) === 'end') ?? data[data.length - 1];
-    const extensionOpacity = isActive ? 0.28 : Math.min(strokeOpacity, 0.18);
+    const extensionOpacity = Math.min(strokeOpacity, 0.18);
 
     return (
       <g key={channel}>
         {startBoundary.time > POINT_EPSILON && (
           <line
-            x1={timeToX(0, viewport, PLOT_RECT)}
-            y1={valueToY(startBoundary.value, viewport, PLOT_RECT)}
-            x2={timeToX(startBoundary.time, viewport, PLOT_RECT)}
-            y2={valueToY(startBoundary.value, viewport, PLOT_RECT)}
+            x1={timeToX(0, computedViewport, PLOT_RECT)}
+            y1={valueToY(startBoundary.value, computedViewport, PLOT_RECT)}
+            x2={timeToX(startBoundary.time, computedViewport, PLOT_RECT)}
+            y2={valueToY(startBoundary.value, computedViewport, PLOT_RECT)}
             stroke={CHANNEL_COLORS[channel]}
             strokeWidth={1.5}
             opacity={extensionOpacity}
@@ -610,10 +552,10 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
         )}
         {endBoundary.time < 1 - POINT_EPSILON && (
           <line
-            x1={timeToX(endBoundary.time, viewport, PLOT_RECT)}
-            y1={valueToY(endBoundary.value, viewport, PLOT_RECT)}
-            x2={timeToX(1, viewport, PLOT_RECT)}
-            y2={valueToY(endBoundary.value, viewport, PLOT_RECT)}
+            x1={timeToX(endBoundary.time, computedViewport, PLOT_RECT)}
+            y1={valueToY(endBoundary.value, computedViewport, PLOT_RECT)}
+            x2={timeToX(1, computedViewport, PLOT_RECT)}
+            y2={valueToY(endBoundary.value, computedViewport, PLOT_RECT)}
             stroke={CHANNEL_COLORS[channel]}
             strokeWidth={1.5}
             opacity={extensionOpacity}
@@ -629,11 +571,11 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
             style={{ pointerEvents: 'none' }}
         />
         {showPoints && data.map((k, i) => {
-            const { x, y } = curveToScreen(k.time, k.value, viewport);
+            const { x, y } = curveToScreen(k.time, k.value, computedViewport);
             const canRemove = data.length > 2 && canDeletePoint(k);
             const isSelected = selectedPoint?.channel === channel && selectedPoint.pointId === k.id;
             const isDraggingPoint = isDraggingThis && draggingPoint?.pointId === k.id;
-            const radius = isActive ? (isDraggingPoint ? 8 : 6) : 4;
+            const radius = isDraggingPoint ? 8 : 6;
             const canMove = canDragPoint(k);
             const isProtected = k.flags.includes('protected');
             const isPreserved = k.flags.includes('uncompressible');
@@ -730,37 +672,44 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
         className ?? "h-full"
       )}
       tabIndex={0}
-      onKeyDown={handleKeyDown}
-      onKeyUp={handleKeyUp}
-      onBlur={() => {
-        setIsSpacePressed(false);
-        setIsPanning(false);
-        panGestureRef.current = null;
-      }}
     >
       <div
         style={{ height: PREVIEW_STRIP_HEIGHT }}
         className="relative w-full shrink-0 overflow-hidden rounded border border-zinc-800/80 opacity-90 shadow-inner"
       >
-        <div className="absolute inset-0" style={{ background: horizontalStripGradient }} />
-        <div className="pointer-events-none absolute bottom-0 left-2 top-0 flex items-center">
-          <span className="rounded bg-white/20 px-1 font-mono text-[9px] font-bold tracking-widest text-black mix-blend-difference">
-            1D COLOR PREVIEW
-          </span>
-        </div>
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundColor: '#0b0b0c',
+            backgroundImage: `
+              linear-gradient(45deg, #27272a 25%, transparent 25%),
+              linear-gradient(-45deg, #27272a 25%, transparent 25%),
+              linear-gradient(45deg, transparent 75%, #27272a 75%),
+              linear-gradient(-45deg, transparent 75%, #27272a 75%)`,
+            backgroundSize: '16px 16px',
+            backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
+          }}
+        />
+        <div
+          className="absolute bottom-0 top-0"
+          style={{
+            ...PREVIEW_INSET,
+            background: horizontalStripGradient,
+          }}
+        />
       </div>
 
       <div className="relative min-h-0 flex-1 overflow-hidden rounded border border-zinc-900/80 bg-[#09090b]">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-          className={cn("absolute inset-0 h-full w-full touch-none", isPanning ? "cursor-grabbing" : isSpacePressed ? "cursor-grab" : "cursor-crosshair")}
-          onPointerDown={handleSvgPointerDown}
+          className="absolute inset-0 h-full w-full touch-none cursor-crosshair"
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerLeave={handlePointerUp}
           onPointerCancel={handlePointerUp}
           onDoubleClick={handleSvgDoubleClick}
+          onWheel={handleWheel}
         >
           {drawGrid()}
           {CHANNELS.map(ch => drawCurve(ch))}
@@ -770,7 +719,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
             type="button"
             title="Zoom out"
             aria-label="Zoom out"
-            onClick={() => applyZoom(1.25, 1.25)}
+            onClick={() => adjustZoom(1 / ZOOM_BUTTON_FACTOR)}
             className="grid h-7 w-7 place-items-center rounded text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
           >
             <Minus className="h-4 w-4" />
@@ -779,7 +728,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
             type="button"
             title="Fit view"
             aria-label="Fit view"
-            onClick={() => scheduleViewport(DEFAULT_CURVE_VIEWPORT)}
+            onClick={() => setZoomX(MIN_ZOOM_X)}
             className="grid h-7 w-7 place-items-center rounded text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
           >
             <Maximize2 className="h-4 w-4" />
@@ -788,14 +737,14 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
             type="button"
             title="Zoom in"
             aria-label="Zoom in"
-            onClick={() => applyZoom(0.8, 0.8)}
+            onClick={() => adjustZoom(ZOOM_BUTTON_FACTOR)}
             className="grid h-7 w-7 place-items-center rounded text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
           >
             <Plus className="h-4 w-4" />
           </button>
         </div>
         <div className="pointer-events-none absolute bottom-3 left-3 font-mono text-[10px] text-zinc-500 drop-shadow-md">
-          Wheel zoom &bull; Shift/Alt axis zoom &bull; Space or middle drag pan
+          Wheel zoom &bull; Double-click add point &bull; Right-click remove point
         </div>
         <div className="pointer-events-none absolute bottom-3 right-3 font-mono text-[10px] text-zinc-500 drop-shadow-md">
           {cursorValue
@@ -810,25 +759,20 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
       >
         <div className="flex items-center gap-1 rounded border border-zinc-950 bg-zinc-900/40 p-0.5">
           {CHANNELS.map((channel) => {
-            const isActive = activeChannel === channel;
             const isEditable = editChannels[channel];
 
             return (
               <button
                 key={channel}
                 type="button"
-                onClick={() => {
-                  onActiveChannelChange(channel);
-                  onEditChannelToggle?.(channel);
-                }}
-                aria-label={`Toggle ${channel.toUpperCase()} editing`}
+                onClick={() => onEditChannelToggle(channel)}
+                aria-label={`${isEditable ? 'Disable' : 'Enable'} ${channel.toUpperCase()} editing`}
                 aria-pressed={isEditable}
                 className={cn(
                   "flex h-6 min-w-8 items-center justify-center gap-1 rounded border px-1.5 font-mono text-[10px] font-bold transition-colors",
-                  isActive
-                    ? "border-white bg-white text-black"
-                    : "border-transparent bg-transparent text-zinc-500 hover:bg-zinc-900 hover:text-zinc-300",
-                  !isEditable && "opacity-45"
+                  isEditable
+                    ? "border-zinc-700 bg-zinc-900 text-zinc-100"
+                    : "border-transparent bg-transparent text-zinc-600 opacity-45 hover:bg-zinc-900 hover:text-zinc-400"
                 )}
                 title={`${isEditable ? 'Disable' : 'Enable'} ${channel.toUpperCase()} editing`}
               >

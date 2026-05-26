@@ -2,8 +2,6 @@ import React, { useReducer, useState, useEffect, useMemo, useRef } from 'react';
 import { get, set } from 'idb-keyval';
 import { ColorCurve, Channel, CurvePoint, LibraryCurve } from './types';
 import { CurveEditor } from './components/CurveEditor';
-import { CurveImportPanel } from './components/CurveImportPanel';
-import { CurvePreview } from './components/CurvePreview';
 import { PointInspector } from './components/PointInspector';
 import { Download, RotateCcw, Settings2 } from 'lucide-react';
 import { cn } from './lib/utils';
@@ -53,7 +51,6 @@ const createMinimalBasicSpace = (): LibraryCurve[] => [{
   source: 'manual'
 }];
 
-import { AtlasViewer } from './components/AtlasViewer';
 import type { MainView } from './state/editorState';
 
 const TWO_DIMENSIONAL_WORKSPACE_VIEW: MainView = '2d';
@@ -94,7 +91,6 @@ export default function App() {
   const {
     mainView,
     levers,
-    activeChannel,
     editChannels,
     interpMode,
     selectedPoint,
@@ -105,6 +101,26 @@ export default function App() {
   const setRawSpacePosition = (val: number) => {
       dispatch({ type: 'set-space-position', mainView: TWO_DIMENSIONAL_WORKSPACE_VIEW, position: val });
   };
+
+  const editorFrame = useMemo(() => {
+    const left = Math.min(layout.atlasViewport.x, layout.curveEditor.x);
+    const top = Math.min(layout.atlasViewport.y, layout.curveEditor.y);
+    const right = Math.max(
+      layout.atlasViewport.x + layout.atlasViewport.width,
+      layout.curveEditor.x + layout.curveEditor.width
+    );
+    const bottom = Math.max(
+      layout.atlasViewport.y + layout.atlasViewport.height,
+      layout.curveEditor.y + layout.curveEditor.height
+    );
+
+    return {
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
+    };
+  }, [layout.atlasViewport, layout.curveEditor]);
 
   useEffect(() => {
     if (mainView !== TWO_DIMENSIONAL_WORKSPACE_VIEW) {
@@ -254,6 +270,10 @@ export default function App() {
     return pointIndex === -1 ? undefined : pointIndex + 1;
   }, [activeSpaceCurve, selectedPoint]);
 
+  const toggleEditChannel = (channel: Channel) => {
+    dispatch({ type: 'toggle-edit-channel', channel });
+  };
+
   const updateSelectedPoint = (patcher: (point: CurvePoint) => CurvePoint) => {
     if (!selectedPoint) return;
     updateActiveCurve(patchCurvePoint(activeSpaceCurve, selectedPoint, patcher));
@@ -375,17 +395,6 @@ export default function App() {
     window.setTimeout(() => URL.revokeObjectURL(finalUrl), 0);
   };
 
-  const channelInfo = [
-    { id: 'r', label: 'Red', color: 'bg-red-500' },
-    { id: 'g', label: 'Green', color: 'bg-green-500' },
-    { id: 'b', label: 'Blue', color: 'bg-blue-500' },
-    { id: 'a', label: 'Alpha', color: 'bg-stone-400' },
-  ] satisfies { id: Channel; label: string; color: string }[];
-
-  const toggleEditChannel = (channel: Channel) => {
-    dispatch({ type: 'toggle-edit-channel', channel });
-  };
-
   const renderCurveEditorPanel = (className = '', editorClassName = '') => (
     <div className={cn("bg-[#09090b] border border-zinc-800 rounded-xl p-2 gap-2 min-h-0 flex flex-col", className)}>
        <div className="shrink-0 flex flex-wrap items-center gap-2">
@@ -404,7 +413,6 @@ export default function App() {
        <CurveEditor
           curve={activeSpaceCurve}
           onChange={updateActiveCurve}
-          activeChannel={activeChannel}
           editChannels={editChannels}
           selectedPoint={selectedPoint}
           onActiveChannelChange={(channel) => dispatch({ type: 'set-active-channel', channel })}
@@ -413,8 +421,9 @@ export default function App() {
             ? dispatch({ type: 'select-point', selection })
             : dispatch({ type: 'clear-point-selection' })}
           interpMode={interpMode}
-          width={Math.max(0, layout.curveEditor.width - 16)}
-          height={Math.max(240, layout.curveEditor.height - 72)}
+          spaceLever={spaceLever}
+          width={Math.max(0, editorFrame.width - 16)}
+          height={Math.max(240, editorFrame.height - 72)}
           className={editorClassName}
        />
     </div>
@@ -530,81 +539,14 @@ export default function App() {
         </div>
       </header>
 
-      <aside
-        data-layout-region="channelStrip"
-        style={{
-          position: 'fixed',
-          left: layout.channelStrip.x,
-          top: layout.channelStrip.y,
-          width: layout.channelStrip.width,
-          height: layout.channelStrip.height
-        }}
-        className="z-40 flex flex-col items-center gap-3 border-r border-white/10 bg-[#09090b]/95 py-4"
-      >
-        {channelInfo.map((ci) => (
-          <button
-            key={ci.id}
-            type="button"
-            onClick={() => dispatch({ type: 'set-active-channel', channel: ci.id })}
-            aria-label={`Set active ${ci.label} channel`}
-            aria-pressed={activeChannel === ci.id}
-            className={cn(
-              "grid h-8 w-8 place-items-center border text-[11px] font-bold transition-colors",
-              activeChannel === ci.id
-                ? "border-white bg-white text-black"
-                : "border-zinc-800 text-zinc-500 hover:text-zinc-200",
-              !editChannels[ci.id] && "opacity-40"
-            )}
-            title={ci.label}
-          >
-            {ci.label.charAt(0)}
-          </button>
-        ))}
-      </aside>
-
-      <section
-        data-layout-region="atlasViewport"
-        style={{
-          position: 'fixed',
-          left: layout.atlasViewport.x,
-          top: layout.atlasViewport.y,
-          width: layout.atlasViewport.width,
-          height: layout.atlasViewport.height
-        }}
-        className="overflow-hidden border-b border-r border-zinc-900 bg-black p-2"
-      >
-        <div className="flex h-full min-h-0 flex-col gap-2">
-          <AtlasViewer
-            curves={spaceCurves}
-            interpMode={interpMode}
-            spaceLever={spaceLever}
-            onSpaceLeverChange={setSpacePosition}
-            onTextureUpdate={setAtlasTexture}
-            onExportAtlas={handleExportLibraryLUT}
-            canExportAtlas={normalizedCategoryCurves.length > 1}
-            className="min-h-0 flex-1 rounded-none border-zinc-800"
-            canvasClassName="h-full min-h-0"
-          />
-          <CurvePreview
-            curve={activeSpaceCurve}
-            interpMode={interpMode}
-            textureData={atlasTexture}
-            sampleY={spaceLever}
-            variant="slice"
-            className="shrink-0"
-          />
-          <CurveImportPanel onImport={importCurve} dense className="min-h-0 max-h-40 shrink-0" />
-        </div>
-      </section>
-
       <main
         data-layout-region="curveEditor"
         style={{
           position: 'fixed',
-          left: layout.curveEditor.x,
-          top: layout.curveEditor.y,
-          width: layout.curveEditor.width,
-          height: layout.curveEditor.height
+          left: editorFrame.x,
+          top: editorFrame.y,
+          width: editorFrame.width,
+          height: editorFrame.height
         }}
         className="overflow-hidden bg-black p-2"
       >
