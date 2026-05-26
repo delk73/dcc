@@ -40,6 +40,7 @@ interface CurveEditorProps {
   interpMode: InterpMode;
   spaceLever: number;
   domainTime?: number;
+  onDomainTimeChange?: (time: number, options?: { commit?: boolean }) => void;
   curveIndexLabel?: string;
   curveIndexTitle?: string;
   width?: number;
@@ -79,6 +80,7 @@ const CHANNEL_COLORS = {
 const POINT_EPSILON = 0.00001;
 const DRAG_THRESHOLD_PX = 3;
 const POINT_HIT_RADIUS = 12;
+const DOMAIN_GUIDE_HIT_RADIUS = 12;
 const CHANNELS: Channel[] = ['r', 'g', 'b', 'a'];
 const isEdgeOwner = (point: CurvePoint) => getEdgeOwner(point) === 'start' || getEdgeOwner(point) === 'end';
 const WHEEL_ZOOM_INTENSITY = 0.0015;
@@ -104,6 +106,9 @@ type BoxSelection = {
   current: { x: number; y: number };
   hasMoved: boolean;
 };
+type DomainGuideDrag = {
+  pointerId: number;
+};
 
 export const CurveEditor: React.FC<CurveEditorProps> = ({
   curve,
@@ -116,6 +121,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   interpMode,
   spaceLever,
   domainTime,
+  onDomainTimeChange,
   curveIndexLabel,
   curveIndexTitle,
   width,
@@ -131,6 +137,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   const [cursorValue, setCursorValue] = useState<{ time: number; value: number } | null>(null);
   const [multiSelectedPoints, setMultiSelectedPoints] = useState<SelectedPointRef[]>([]);
   const [boxSelection, setBoxSelection] = useState<BoxSelection | null>(null);
+  const [domainGuideDrag, setDomainGuideDrag] = useState<DomainGuideDrag | null>(null);
   const liveCurveRef = useRef<ColorCurve>(curve);
   const dragGestureRef = useRef<DragGesture | null>(null);
   const latestCursorAnchorRef = useRef({ time: spaceLever, ratio: 0.5 });
@@ -310,6 +317,11 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   const getPlotRatio = (x: number) =>
     Math.max(0, Math.min(1, (x - PLOT_RECT.left) / PLOT_RECT.width));
 
+  const updateDomainTimeFromSvgPoint = (point: { x: number; y: number }, commit = false) => {
+    const nextTime = Math.max(0, Math.min(1, screenToCurve(point).time));
+    onDomainTimeChange?.(nextTime, { commit });
+  };
+
   const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
     if (event.deltaY === 0) return;
     event.preventDefault();
@@ -385,6 +397,18 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     if (findNearestEditablePoint(point)) return;
 
     e.preventDefault();
+    if (domainTime !== undefined && onDomainTimeChange) {
+      const guideX = timeToX(domainTime, computedViewport, PLOT_RECT);
+      const isInGuideX = Math.abs(point.x - guideX) <= DOMAIN_GUIDE_HIT_RADIUS;
+      const isInGuideY = point.y >= PLOT_RECT.top && point.y <= PLOT_RECT.bottom + 14;
+      if (isInGuideX && isInGuideY) {
+        setDomainGuideDrag({ pointerId: e.pointerId });
+        updateDomainTimeFromSvgPoint(point);
+        e.currentTarget.setPointerCapture(e.pointerId);
+        return;
+      }
+    }
+
     setBoxSelection({
       pointerId: e.pointerId,
       start: point,
@@ -403,6 +427,13 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
         time: nextCursorValue.time,
         ratio: getPlotRatio(svgPoint.x),
       };
+    }
+
+    if (domainGuideDrag) {
+      if (!svgPoint || domainGuideDrag.pointerId !== e.pointerId) return;
+      e.preventDefault();
+      updateDomainTimeFromSvgPoint(svgPoint);
+      return;
     }
 
     if (boxSelection) {
@@ -513,6 +544,18 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   };
 
   const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (domainGuideDrag && domainGuideDrag.pointerId === e.pointerId) {
+      const svgPoint = getSvgPoint(e.clientX, e.clientY);
+      if (svgPoint) {
+        updateDomainTimeFromSvgPoint(svgPoint, true);
+      }
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+      setDomainGuideDrag(null);
+      return;
+    }
+
     if (boxSelection && boxSelection.pointerId === e.pointerId) {
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);

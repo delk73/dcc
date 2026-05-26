@@ -12,7 +12,7 @@ interface AtlasViewerProps {
   activeCurveLabel?: string;
   activeChannelsLabel?: string;
   onSpaceLeverChange?: (position: number) => void;
-  onDomainTimeChange?: (position: number) => void;
+  onDomainTimeChange?: (position: number, options?: { commit?: boolean }) => void;
   onAnchorDragStart?: (anchorId: string) => void;
   onAnchorPositionChange?: (anchorId: string, position: number) => void;
   onAnchorDragEnd?: () => void;
@@ -59,9 +59,9 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
     };
   };
 
-  const updateSelectorFromPointer = (clientX: number, clientY: number) => {
+  const updateSelectorFromPointer = (clientX: number, clientY: number, commit = false) => {
     const next = getSelectorPosition(clientX, clientY);
-    onDomainTimeChange?.(next.time);
+    onDomainTimeChange?.(next.time, { commit });
     onSpaceLeverChange?.(next.space);
   };
 
@@ -79,6 +79,9 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
   };
 
   const handleAtlasPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      updateSelectorFromPointer(event.clientX, event.clientY, true);
+    }
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -250,11 +253,11 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
                   }
                   if (event.key === 'ArrowRight') {
                     event.preventDefault();
-                    onDomainTimeChange?.(Math.min(1, domainTime + 0.01));
+                    onDomainTimeChange?.(Math.min(1, domainTime + 0.01), { commit: true });
                   }
                   if (event.key === 'ArrowLeft') {
                     event.preventDefault();
-                    onDomainTimeChange?.(Math.max(0, domainTime - 0.01));
+                    onDomainTimeChange?.(Math.max(0, domainTime - 0.01), { commit: true });
                   }
                 }}
             style={{

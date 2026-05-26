@@ -217,8 +217,13 @@ export default function App() {
     };
   }, [normalizedCategoryCurves, spaceLever]);
 
-  const setAtlasDomainTimeWithDetent = (time: number) => {
+  const setAtlasDomainTimeWithDetent = (time: number, options: { commit?: boolean } = { commit: true }) => {
     const clampedTime = Math.max(0, Math.min(1, time));
+    if (!options.commit) {
+      setAtlasDomainTime(clampedTime);
+      return;
+    }
+
     const nearestPoint = (['r', 'g', 'b', 'a'] as Channel[]).reduce((nearest, channel) => {
       return activeSpaceCurve[channel].reduce((channelNearest, point) => {
         const distance = Math.abs(point.time - clampedTime);
@@ -356,6 +361,7 @@ export default function App() {
           interpMode={interpMode}
           spaceLever={spaceLever}
           domainTime={atlasDomainTime}
+          onDomainTimeChange={setAtlasDomainTimeWithDetent}
           curveIndexLabel={activeCurveIndexInfo?.label}
           curveIndexTitle={activeCurveIndexInfo?.title}
           width={Math.max(0, layout.curveEditor.width - 16)}
