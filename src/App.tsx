@@ -1,13 +1,15 @@
 import React, { useReducer, useState, useEffect, useMemo, useRef } from 'react';
 import { get, set } from 'idb-keyval';
 import { ColorCurve, Channel, CurvePoint, LibraryCurve } from './types';
+import { WorkspaceMode } from './types/layoutSpec';
 import { CurveEditor } from './components/CurveEditor';
 import { CurveImportPanel } from './components/CurveImportPanel';
 import { CurvePreview } from './components/CurvePreview';
 import { PointInspector } from './components/PointInspector';
-import { Layers, RotateCcw, Settings2 } from 'lucide-react';
+import { Download, Layers, RotateCcw, Settings2 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { InterpMode, computeTangents, evaluateCurve, blendSpaceCurves } from './lib/curveUtils';
+import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
 import {
   POSITION_EPSILON,
   clampSpacePosition,
@@ -53,8 +55,44 @@ const createMinimalBasicSpace = (): LibraryCurve[] => [{
 }];
 
 import { AtlasViewer } from './components/AtlasViewer';
+import type { MainView } from './state/editorState';
+
+const WORKSPACE_MODE_BY_VIEW: Record<MainView, WorkspaceMode> = {
+  curve: '1D',
+  '2d': '2D',
+  '3d': '3D'
+};
+
+const MAIN_VIEW_BY_MODE: Record<WorkspaceMode, MainView> = {
+  '1D': 'curve',
+  '2D': '2d',
+  '3D': '3d'
+};
+
+const useWindowDimensions = () => {
+  const [dims, setDims] = useState(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight
+  }));
+
+  useEffect(() => {
+    const handleResize = () => {
+      setDims({
+        width: window.innerWidth,
+        height: window.innerHeight
+      });
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  return dims;
+};
 
 export default function App() {
+  const { width, height } = useWindowDimensions();
+  const layout = useWorkspaceLayout(width, height);
   const [editorState, dispatch] = useReducer(editorReducer, undefined, createInitialEditorState);
   const continuumTrackRef = useRef<HTMLDivElement>(null);
   const anchorsRef = useRef<LibraryCurve[]>([]);
@@ -475,114 +513,248 @@ export default function App() {
   );
 
   return (
-    <div className="h-screen overflow-hidden select-none bg-black text-zinc-100 font-sans selection:bg-indigo-500/30 flex flex-col">
-      <header className="shrink-0 flex flex-wrap items-center gap-3 px-4 py-3 sm:px-5 border-b border-white/5">
-        <h1 className="text-lg font-bold tracking-tight text-white mr-2">Curve Composer</h1>
+    <div className="fixed inset-0 overflow-hidden select-none bg-black text-zinc-100 font-sans selection:bg-indigo-500/30">
+      <header
+        data-layout-region="modeRibbon"
+        style={{
+          position: 'fixed',
+          left: layout.modeRibbon.x,
+          top: layout.modeRibbon.y,
+          width: layout.modeRibbon.width,
+          height: layout.modeRibbon.height
+        }}
+        className="z-50 flex items-center gap-3 border-b border-white/10 bg-[#09090b]/95 px-3"
+      >
+        <h1 className="mr-1 shrink-0 text-sm font-bold tracking-tight text-white">Curve Composer</h1>
 
-        <div className="flex bg-black border border-zinc-800 rounded-lg p-1 overflow-hidden">
-          <button
-            onClick={() => dispatch({ type: 'set-main-view', mainView: 'curve' })}
-            className={cn("px-4 py-1.5 text-sm font-medium transition-colors", mainView === 'curve' ? 'bg-[#1a1c2e] text-indigo-400' : 'text-zinc-400 hover:text-zinc-200')}
-          >
-            1D Curve
-          </button>
-          <button
-            onClick={() => dispatch({ type: 'set-main-view', mainView: '2d' })}
-            className={cn("px-4 py-1.5 text-sm font-medium transition-colors border-l border-zinc-800", mainView === '2d' ? 'bg-[#1a1c2e] text-indigo-400' : 'text-zinc-400 hover:text-zinc-200')}
-          >
-            2D Atlas
-          </button>
-          <button
-            onClick={() => dispatch({ type: 'set-main-view', mainView: '3d' })}
-            className={cn("px-4 py-1.5 text-sm font-medium transition-colors border-l border-zinc-800", mainView === '3d' ? 'bg-[#1a1c2e] text-indigo-400' : 'text-zinc-400 hover:text-zinc-200')}
-          >
-            3D Volume
-          </button>
+        <div className="flex h-7 overflow-hidden rounded border border-zinc-800 bg-black">
+          {(['1D', '2D', '3D'] as WorkspaceMode[]).map((mode) => {
+            const view = MAIN_VIEW_BY_MODE[mode];
+            const isActive = mainView === view;
+
+            return (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => dispatch({ type: 'set-main-view', mainView: view })}
+                className={cn(
+                  "min-w-10 border-l border-zinc-800 px-2 text-[11px] font-medium transition-colors first:border-l-0",
+                  isActive ? "bg-white text-black" : "text-zinc-500 hover:text-zinc-200"
+                )}
+              >
+                {mode}
+              </button>
+            );
+          })}
         </div>
 
-        <div className="flex items-center gap-3 ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <span className="hidden text-[10px] font-mono uppercase tracking-wider text-zinc-600 sm:inline">
+            {WORKSPACE_MODE_BY_VIEW[mainView]} / {layout.isWidescreen ? 'Wide' : 'Portrait'}
+          </span>
+          {mainView === '2d' && (
+            <button
+              type="button"
+              onClick={handleExportLibraryLUT}
+              disabled={normalizedCategoryCurves.length <= 1}
+              className="grid h-7 w-7 place-items-center rounded border border-zinc-800 text-zinc-500 hover:bg-white/10 hover:text-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+              title="Export 2D atlas"
+              aria-label="Export 2D atlas"
+            >
+              <Download className="h-4 w-4" />
+            </button>
+          )}
           <button
+            type="button"
             onClick={resetToMinimalBasicSpace}
-            className="text-zinc-500 hover:text-zinc-300"
+            className="grid h-7 w-7 place-items-center rounded text-zinc-500 hover:bg-white/10 hover:text-zinc-200"
             title="Reset space to minimal basic representation"
             aria-label="Reset space to minimal basic representation"
           >
-            <RotateCcw className="w-5 h-5" />
+            <RotateCcw className="h-4 w-4" />
           </button>
-          <button className="text-zinc-500 hover:text-zinc-300" aria-label="Refresh">
-            <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 7v6h-6"></path><path d="M3 17a9 9 0 019-9 9 9 0 016 2.3l3 2.7"></path></svg>
-          </button>
-          <button className="text-zinc-500 hover:text-zinc-300 border border-zinc-800 bg-[#09090b] rounded p-2" aria-label="Settings">
-            <Settings2 className="w-5 h-5" />
+          <button
+            type="button"
+            className="grid h-7 w-7 place-items-center rounded border border-zinc-800 bg-black text-zinc-500 hover:text-zinc-200"
+            aria-label="Settings"
+          >
+            <Settings2 className="h-4 w-4" />
           </button>
         </div>
       </header>
 
-      <main className="flex-1 min-h-0 overflow-hidden">
-        <div className="h-full max-w-[1800px] mx-auto p-2 sm:p-3 min-h-0">
-          {mainView === 'curve' && (
-            <div className="h-full min-h-0 grid grid-rows-[auto_minmax(260px,1fr)_auto_auto] gap-2 overflow-y-auto xl:overflow-hidden">
-              <CurvePreview
-                curve={activeSpaceCurve}
-                interpMode={interpMode}
-                textureData={atlasTexture}
-                sampleY={spaceLever}
-                variant="compact"
-                className="shrink-0"
-              />
+      <aside
+        data-layout-region="channelStrip"
+        style={{
+          position: 'fixed',
+          left: layout.channelStrip.x,
+          top: layout.channelStrip.y,
+          width: layout.channelStrip.width,
+          height: layout.channelStrip.height
+        }}
+        className="z-40 flex flex-col items-center gap-3 border-r border-white/10 bg-[#09090b]/95 py-4"
+      >
+        {channelInfo.map((ci) => (
+          <button
+            key={ci.id}
+            type="button"
+            onClick={() => dispatch({ type: 'set-active-channel', channel: ci.id })}
+            aria-label={`Set active ${ci.label} channel`}
+            aria-pressed={activeChannel === ci.id}
+            className={cn(
+              "grid h-8 w-8 place-items-center border text-[11px] font-bold transition-colors",
+              activeChannel === ci.id
+                ? "border-white bg-white text-black"
+                : "border-zinc-800 text-zinc-500 hover:text-zinc-200",
+              !editChannels[ci.id] && "opacity-40"
+            )}
+            title={ci.label}
+          >
+            {ci.label.charAt(0)}
+          </button>
+        ))}
+      </aside>
 
-              {renderCurveEditorPanel("min-h-[280px] xl:min-h-0", "h-[clamp(280px,54vh,720px)] xl:h-auto xl:flex-1")}
+      <section
+        data-layout-region="outputViewport"
+        style={{
+          position: 'fixed',
+          left: layout.outputViewport.x,
+          top: layout.outputViewport.y,
+          width: layout.outputViewport.width,
+          height: layout.outputViewport.height
+        }}
+        className="overflow-hidden border-b border-r border-zinc-900 bg-black p-2"
+      >
+        {mainView === 'curve' && (
+          <div className="flex h-full min-h-0 flex-col gap-2">
+            <CurvePreview
+              curve={activeSpaceCurve}
+              interpMode={interpMode}
+              textureData={atlasTexture}
+              sampleY={spaceLever}
+              variant="compact"
+              className="shrink-0"
+            />
+            <CurveImportPanel onImport={importCurve} dense className="min-h-0 flex-1" />
+          </div>
+        )}
 
-              <div className="min-w-0">
-                <CurveImportPanel onImport={importCurve} dense className="max-h-44" />
-              </div>
-              {renderSpaceContinuum()}
-            </div>
-          )}
+        {mainView === '2d' && (
+          <div className="flex h-full min-h-0 flex-col gap-2">
+            <AtlasViewer
+              curves={spaceCurves}
+              interpMode={interpMode}
+              spaceLever={spaceLever}
+              onSpaceLeverChange={setSpacePosition}
+              onTextureUpdate={setAtlasTexture}
+              onExportAtlas={handleExportLibraryLUT}
+              canExportAtlas={normalizedCategoryCurves.length > 1}
+              className="min-h-0 flex-1 rounded-none border-zinc-800"
+              canvasClassName="h-full min-h-0"
+            />
+            <CurvePreview
+              curve={activeSpaceCurve}
+              interpMode={interpMode}
+              textureData={atlasTexture}
+              sampleY={spaceLever}
+              variant="slice"
+              className="shrink-0"
+            />
+          </div>
+        )}
 
-          {mainView === '2d' && (
-            <div className="h-full min-h-0 grid grid-rows-[minmax(230px,1.35fr)_auto_minmax(220px,1fr)_auto_auto] gap-2 overflow-y-auto 2xl:overflow-hidden">
-              <AtlasViewer
-                curves={spaceCurves}
-                interpMode={interpMode}
-                spaceLever={spaceLever}
-                onSpaceLeverChange={setSpacePosition}
-                onTextureUpdate={setAtlasTexture}
-                onExportAtlas={handleExportLibraryLUT}
-                canExportAtlas={normalizedCategoryCurves.length > 1}
-                className="min-h-[220px]"
-                canvasClassName="h-full"
-              />
-              <CurvePreview
-                curve={activeSpaceCurve}
-                interpMode={interpMode}
-                textureData={atlasTexture}
-                sampleY={spaceLever}
-                variant="slice"
-              />
-              {renderCurveEditorPanel("min-h-[220px]", "h-[clamp(220px,38vh,520px)] 2xl:h-auto 2xl:flex-1")}
-              <div className="min-w-0">
-                <CurveImportPanel onImport={importCurve} dense className="max-h-40" />
-              </div>
-              {renderSpaceContinuum()}
-            </div>
-          )}
+        {mainView === '3d' && (
+          <div className="flex h-full flex-col items-center justify-center border border-dashed border-zinc-800 bg-zinc-950 p-8 text-center text-zinc-500">
+            <Layers className="mb-4 h-10 w-10 opacity-30" />
+            <h3 className="text-lg font-medium text-zinc-300">3D Volume Generation</h3>
+            <p className="mt-3 max-w-md text-sm leading-relaxed">
+              Generate entire sets of variant spaces to build a fully procedural Volume texture.
+            </p>
+          </div>
+        )}
+      </section>
 
-          {mainView === '3d' && (
-            <div className="h-full min-h-0 flex flex-col items-center justify-center p-8 text-zinc-500 border border-zinc-800 border-dashed rounded-xl bg-zinc-900/50">
-              <Layers className="w-12 h-12 mb-4 opacity-30" />
-              <h3 className="text-xl font-medium text-zinc-300">3D Volume Generation</h3>
-              <p className="text-sm mt-3 max-w-md text-center leading-relaxed">
-                Generate entire sets of variant spaces to build a fully procedural Volume texture (3D LUT).
-                This feature evaluates batch matrices seamlessly mapping along an additional Z-axis dimension.
-              </p>
-              <button className="px-4 py-2 mt-6 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-md text-sm border border-zinc-700 transition-colors pointer-events-none opacity-50">
-                Under Construction
-              </button>
-            </div>
-          )}
-        </div>
+      <main
+        data-layout-region="curveEditor"
+        style={{
+          position: 'fixed',
+          left: layout.curveEditor.x,
+          top: layout.curveEditor.y,
+          width: layout.curveEditor.width,
+          height: layout.curveEditor.height
+        }}
+        className="overflow-hidden bg-black p-2"
+      >
+        {renderCurveEditorPanel("h-full min-h-0 rounded-none border-zinc-800", "h-full min-h-0 flex-1 rounded-none")}
       </main>
+
+      <footer
+        data-layout-region="spaceSlider"
+        style={{
+          position: 'fixed',
+          left: layout.spaceSlider.x,
+          top: layout.spaceSlider.y,
+          width: layout.spaceSlider.width,
+          height: layout.spaceSlider.height
+        }}
+        className="z-50 flex items-center gap-3 border-t border-white/10 bg-[#09090b]/95 px-4"
+      >
+        <span className="w-16 shrink-0 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+          Space
+        </span>
+        <div ref={continuumTrackRef} className="relative h-full min-w-0 flex-1">
+          <div
+            className="pointer-events-none absolute left-0 right-0 top-1/2 h-2 -translate-y-1/2 overflow-hidden rounded-full opacity-60"
+            style={{ background: categoryGradient }}
+          />
+          <div className="pointer-events-none absolute inset-x-0 top-1/2 z-20 -translate-y-1/2">
+            {normalizedCategoryCurves.map((c) => (
+              <div
+                key={c.id}
+                role="slider"
+                aria-label={`Authored anchor at ${(c.position || 0).toFixed(2)}`}
+                aria-valuemin={0}
+                aria-valuemax={1}
+                aria-valuenow={c.position || 0}
+                tabIndex={0}
+                className="pointer-events-auto absolute -ml-2.5 -mt-2.5 flex h-5 w-5 cursor-grab touch-none items-center justify-center rounded-full active:cursor-grabbing"
+                style={{ left: `${(c.position || 0) * 100}%` }}
+                onPointerDown={(e) => handleAnchorPointerDown(e, c.id)}
+                onPointerMove={handleAnchorPointerMove}
+                onPointerUp={handleAnchorPointerUp}
+                onPointerCancel={handleAnchorPointerUp}
+              >
+                <div
+                  className={cn(
+                    "h-3 w-3 rounded-full border-2 border-zinc-950 bg-white shadow-md transition-transform",
+                    interaction.type === 'dragging-anchor' && interaction.anchorId === c.id && "scale-125"
+                  )}
+                />
+              </div>
+            ))}
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.001"
+            value={spaceLever}
+            onChange={(e) => setSpacePosition(parseFloat(e.target.value))}
+            className="absolute inset-0 z-30 h-full w-full cursor-pointer opacity-0"
+            aria-label="Space position"
+          />
+          <div
+            className="pointer-events-none absolute top-1/2 z-10 -ml-3.5 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded border border-indigo-500/50 bg-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.2)]"
+            style={{ left: `${spaceLever * 100}%` }}
+          >
+            <div className="h-5 w-2 rounded-full bg-indigo-400" />
+          </div>
+        </div>
+        <span className="w-12 shrink-0 text-right font-mono text-[10px] text-zinc-400">
+          {spaceLever.toFixed(3)}
+        </span>
+      </footer>
     </div>
   );
 }
