@@ -86,11 +86,21 @@ const WHEEL_ZOOM_INTENSITY = 0.0015;
 const MIN_ZOOM_X = 1;
 const MAX_ZOOM_X = 32;
 const ZOOM_BUTTON_FACTOR = 1.25;
+const MIN_TRANSFORM_SPAN = 0.001;
 type DragGesture = {
   channel: Channel;
   pointId: string;
   startClientX: number;
   startClientY: number;
+  hasMoved: boolean;
+  startCurvePoint: { time: number; value: number };
+  multiDrag: boolean;
+  startCurve: ColorCurve;
+};
+type BoxSelection = {
+  pointerId: number;
+  start: { x: number; y: number };
+  current: { x: number; y: number };
   hasMoved: boolean;
 };
 
@@ -118,12 +128,16 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   const [zoomX, setZoomX] = useState(MIN_ZOOM_X);
   const [zoomAnchor, setZoomAnchor] = useState({ time: spaceLever, ratio: 0.5 });
   const [cursorValue, setCursorValue] = useState<{ time: number; value: number } | null>(null);
+  const [multiSelectedPoints, setMultiSelectedPoints] = useState<SelectedPointRef[]>([]);
+  const [boxSelection, setBoxSelection] = useState<BoxSelection | null>(null);
   const liveCurveRef = useRef<ColorCurve>(curve);
   const dragGestureRef = useRef<DragGesture | null>(null);
   const latestCursorAnchorRef = useRef({ time: spaceLever, ratio: 0.5 });
 
   const activeCurveData = draggingPoint ? localCurve : curve;
   const editableChannels = CHANNELS.filter(channel => editChannels[channel]);
+  const isMultiSelected = (selection: SelectedPointRef) =>
+    multiSelectedPoints.some(point => point.channel === selection.channel && point.pointId === selection.pointId);
   const boundedWidth = width && width > 0 ? width : undefined;
   const boundedHeight = height && height > 0 ? height : undefined;
   const availablePlotHeight = Math.max(
@@ -247,6 +261,19 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     const point = curve[channel][pointIndex];
     e.stopPropagation();
     onActiveChannelChange(channel);
+    if (e.shiftKey || e.ctrlKey || e.metaKey) {
+      const nextSelection = { channel, pointId: point.id };
+      setMultiSelectedPoints(current => isMultiSelected(nextSelection)
+        ? current.filter(selection => selection.channel !== channel || selection.pointId !== point.id)
+        : [...current, nextSelection]
+      );
+      onSelectedPointChange(nextSelection);
+      return;
+    }
+    const pointIsMultiSelected = isMultiSelected({ channel, pointId: point.id });
+    if (!pointIsMultiSelected) {
+      setMultiSelectedPoints([]);
+    }
     onSelectedPointChange({ channel, pointId: point.id });
     if (!canDragPoint(point)) return;
     setLocalCurve(curve);
@@ -256,7 +283,10 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
       pointId: point.id,
       startClientX: e.clientX,
       startClientY: e.clientY,
-      hasMoved: false
+      hasMoved: false,
+      startCurvePoint: { time: point.time, value: point.value },
+      multiDrag: pointIsMultiSelected && multiSelectedPoints.length > 1,
+      startCurve: curve,
     };
     setDraggingPoint({ channel, pointId: point.id });
     (e.target as Element).setPointerCapture(e.pointerId);
@@ -325,6 +355,41 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     }, null as { channel: Channel; point: CurvePoint; distance: number } | null);
   };
 
+  const getBoxSelectionRefs = (box: BoxSelection): SelectedPointRef[] => {
+    const minX = Math.min(box.start.x, box.current.x);
+    const maxX = Math.max(box.start.x, box.current.x);
+    const minY = Math.min(box.start.y, box.current.y);
+    const maxY = Math.max(box.start.y, box.current.y);
+
+    return editableChannels.flatMap(channel =>
+      activeCurveData[channel].filter(point => {
+        const screenPoint = curveToScreen(point.time, point.value);
+        return screenPoint.x >= minX
+          && screenPoint.x <= maxX
+          && screenPoint.y >= minY
+          && screenPoint.y <= maxY;
+      }).map(point => ({ channel, pointId: point.id }))
+    );
+  };
+
+  const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.button !== 0) return;
+    if (e.shiftKey || e.ctrlKey || e.metaKey) return;
+
+    const point = getSvgPoint(e.clientX, e.clientY);
+    if (!point) return;
+    if (findNearestEditablePoint(point)) return;
+
+    e.preventDefault();
+    setBoxSelection({
+      pointerId: e.pointerId,
+      start: point,
+      current: point,
+      hasMoved: false,
+    });
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
   const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     const svgPoint = getSvgPoint(e.clientX, e.clientY);
     if (svgPoint) {
@@ -334,6 +399,21 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
         time: nextCursorValue.time,
         ratio: getPlotRatio(svgPoint.x),
       };
+    }
+
+    if (boxSelection) {
+      if (!svgPoint) return;
+      setBoxSelection(current => {
+        if (!current) return null;
+        const dx = svgPoint.x - current.start.x;
+        const dy = svgPoint.y - current.start.y;
+        return {
+          ...current,
+          current: svgPoint,
+          hasMoved: current.hasMoved || Math.sqrt(dx * dx + dy * dy) >= DRAG_THRESHOLD_PX,
+        };
+      });
+      return;
     }
 
     if (!draggingPoint || !svgRef.current) return;
@@ -357,6 +437,51 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     const nextCurvePoint = screenToCurve(point);
     const newTime = nextCurvePoint.time;
     const newValue = nextCurvePoint.value;
+
+    if (dragGesture.multiDrag) {
+      const deltaTime = (newTime - dragGesture.startCurvePoint.time) * 0.5;
+      const deltaValue = (newValue - dragGesture.startCurvePoint.value) * 0.5;
+      let nextCurve = dragGesture.startCurve;
+
+      for (const targetChannel of CHANNELS) {
+        const channelSelections = multiSelectedPoints.filter(selection => selection.channel === targetChannel);
+        if (channelSelections.length === 0) continue;
+
+        const channelData = [...nextCurve[targetChannel]];
+        for (const selection of channelSelections) {
+          const selectedIndex = channelData.findIndex(candidate => candidate.id === selection.pointId);
+          if (selectedIndex === -1) continue;
+          const selectedPoint = channelData[selectedIndex];
+          if (!canDragPoint(selectedPoint)) continue;
+
+          const constrainedMove = applyPointMoveConstraints(
+            channelData,
+            selectedIndex,
+            {
+              time: selectedPoint.time + deltaTime,
+              value: selectedPoint.value + deltaValue,
+            },
+            POINT_EPSILON
+          );
+
+          channelData[selectedIndex] = {
+            ...selectedPoint,
+            time: constrainedMove.time,
+            value: constrainedMove.value,
+          };
+        }
+
+        nextCurve = {
+          ...nextCurve,
+          [targetChannel]: channelData
+        };
+      }
+
+      liveCurveRef.current = nextCurve;
+      setLocalCurve(nextCurve);
+      onChange(nextCurve);
+      return;
+    }
 
     const currentCurve = liveCurveRef.current;
     const channelData = [...currentCurve[draggingPoint.channel]];
@@ -384,6 +509,26 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   };
 
   const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (boxSelection && boxSelection.pointerId === e.pointerId) {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+
+      if (boxSelection.hasMoved) {
+        const selectedRefs = getBoxSelectionRefs(boxSelection);
+        setMultiSelectedPoints(selectedRefs);
+        if (selectedRefs.length > 0) {
+          onActiveChannelChange(selectedRefs[selectedRefs.length - 1].channel);
+          onSelectedPointChange(selectedRefs[selectedRefs.length - 1]);
+        } else {
+          onSelectedPointChange(null);
+        }
+      }
+
+      setBoxSelection(null);
+      return;
+    }
+
     if (draggingPoint) {
       const target = e.target as Element;
       if (target.hasPointerCapture?.(e.pointerId)) {
@@ -392,11 +537,13 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
 
       if (dragGestureRef.current?.hasMoved) {
         const currentCurve = liveCurveRef.current;
-        const channelData = orderCurvePoints([...currentCurve[draggingPoint.channel]]);
-        const newCurve = {
-          ...currentCurve,
-          [draggingPoint.channel]: channelData
-        };
+        const channelsToOrder = dragGestureRef.current.multiDrag
+          ? Array.from(new Set(multiSelectedPoints.map(selection => selection.channel)))
+          : [draggingPoint.channel];
+        const newCurve = channelsToOrder.reduce((nextCurve, channel) => ({
+          ...nextCurve,
+          [channel]: orderCurvePoints([...nextCurve[channel]])
+        }), currentCurve);
         
         liveCurveRef.current = newCurve;
         setLocalCurve(newCurve);
@@ -416,6 +563,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     if (nearestPoint) {
       e.preventDefault();
       onActiveChannelChange(nearestPoint.channel);
+      setMultiSelectedPoints([]);
       onSelectedPointChange({ channel: nearestPoint.channel, pointId: nearestPoint.point.id });
       return;
     }
@@ -451,6 +599,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     };
     
     setLocalCurve(newCurve);
+    setMultiSelectedPoints([]);
     onSelectedPointChange({ channel: targetChannel, pointId: newPoint.id });
     onChange(newCurve);
   };
@@ -472,10 +621,82 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     };
     
     setLocalCurve(newCurve);
+    setMultiSelectedPoints(current =>
+      current.filter(selection => selection.channel !== channel || selection.pointId !== point.id)
+    );
     if (selectedPoint?.channel === channel && selectedPoint.pointId === point.id) {
       onSelectedPointChange(null);
     }
     onChange(newCurve);
+  };
+
+  const selectedTransformSummary = useMemo(() => {
+    const points = multiSelectedPoints
+      .map(selection => activeCurveData[selection.channel].find(point => point.id === selection.pointId))
+      .filter((point): point is CurvePoint => Boolean(point));
+    if (points.length <= 1) return null;
+
+    const minTime = Math.min(...points.map(point => point.time));
+    const maxTime = Math.max(...points.map(point => point.time));
+    const minValue = Math.min(...points.map(point => point.value));
+    const maxValue = Math.max(...points.map(point => point.value));
+
+    return {
+      count: points.length,
+      centerTime: (minTime + maxTime) / 2,
+      centerValue: (minValue + maxValue) / 2,
+      timeSpan: maxTime - minTime,
+      valueSpan: maxValue - minValue,
+    };
+  }, [activeCurveData, multiSelectedPoints]);
+
+  const scaleSelectedSpan = (axis: 'time' | 'value', nextSpan: number) => {
+    if (!selectedTransformSummary) return;
+    const currentSpan = axis === 'time'
+      ? selectedTransformSummary.timeSpan
+      : selectedTransformSummary.valueSpan;
+    const center = axis === 'time'
+      ? selectedTransformSummary.centerTime
+      : selectedTransformSummary.centerValue;
+    const scale = Math.max(MIN_TRANSFORM_SPAN, nextSpan) / Math.max(MIN_TRANSFORM_SPAN, currentSpan);
+    let nextCurve = activeCurveData;
+
+    for (const channel of CHANNELS) {
+      const channelSelections = multiSelectedPoints.filter(selection => selection.channel === channel);
+      if (channelSelections.length === 0) continue;
+
+      const channelData = [...nextCurve[channel]];
+      for (const selection of channelSelections) {
+        const index = channelData.findIndex(point => point.id === selection.pointId);
+        if (index === -1) continue;
+        const point = channelData[index];
+        if (!canDragPoint(point)) continue;
+
+        const target = axis === 'time'
+          ? {
+              time: center + ((point.time - center) * scale),
+              value: point.value,
+            }
+          : {
+              time: point.time,
+              value: center + ((point.value - center) * scale),
+            };
+        const constrained = applyPointMoveConstraints(channelData, index, target, POINT_EPSILON);
+        channelData[index] = {
+          ...point,
+          time: constrained.time,
+          value: constrained.value,
+        };
+      }
+
+      nextCurve = {
+        ...nextCurve,
+        [channel]: orderCurvePoints(channelData)
+      };
+    }
+
+    setLocalCurve(nextCurve);
+    onChange(nextCurve);
   };
 
   const drawGrid = () => {
@@ -621,6 +842,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
             const { x, y } = curveToScreen(k.time, k.value, computedViewport);
             const canRemove = data.length > 2 && canDeletePoint(k);
             const isSelected = selectedPoint?.channel === channel && selectedPoint.pointId === k.id;
+            const isMultiPointSelected = isMultiSelected({ channel, pointId: k.id });
             const isSoftFocused = !selectedPoint && focusedPointRef?.channel === channel && focusedPointRef.point.id === k.id;
             const isDraggingPoint = isDraggingThis && draggingPoint?.pointId === k.id;
             const radius = isDraggingPoint ? 8 : 6;
@@ -628,8 +850,8 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
             const isProtected = k.flags.includes('protected');
             const isPreserved = k.flags.includes('uncompressible');
             const markerOpacity = k.role === 'sample' ? 0.62 : 1;
-            const markerStroke = isProtected ? '#f8fafc' : (isSelected || isSoftFocused) ? '#ffffff' : '#18181b';
-            const markerStrokeWidth = isProtected || isSelected || isSoftFocused ? 2.5 : 2;
+            const markerStroke = isProtected ? '#f8fafc' : (isSelected || isSoftFocused || isMultiPointSelected) ? '#ffffff' : '#18181b';
+            const markerStrokeWidth = isProtected || isSelected || isSoftFocused || isMultiPointSelected ? 2.5 : 2;
             const title = canRemove ? 'Right-click to remove point' : isEdgeOwner(k) ? 'Boundary edge owner' : 'Protected point';
 
             return (
@@ -644,7 +866,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
                     onDoubleClick={(e) => e.stopPropagation()}
                 >
                     <title>{title}</title>
-                    {(isSelected || isSoftFocused) && (
+                    {(isSelected || isSoftFocused || isMultiPointSelected) && (
                       <circle
                           cx={x}
                           cy={y}
@@ -652,7 +874,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
                           fill="none"
                           stroke="white"
                           strokeWidth={1.25}
-                          opacity={isSelected ? 0.72 : 0.38}
+                          opacity={isSelected ? 0.72 : isMultiPointSelected ? 0.58 : 0.38}
                           style={{ pointerEvents: 'none' }}
                       />
                     )}
@@ -739,6 +961,29 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     );
   };
 
+  const drawBoxSelection = () => {
+    if (!boxSelection || !boxSelection.hasMoved) return null;
+
+    const x = Math.min(boxSelection.start.x, boxSelection.current.x);
+    const y = Math.min(boxSelection.start.y, boxSelection.current.y);
+    const width = Math.abs(boxSelection.current.x - boxSelection.start.x);
+    const height = Math.abs(boxSelection.current.y - boxSelection.start.y);
+
+    return (
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        fill="rgba(255,255,255,0.08)"
+        stroke="#f8fafc"
+        strokeWidth="1.25"
+        strokeDasharray="5 5"
+        pointerEvents="none"
+      />
+    );
+  };
+
   return (
     <div
       ref={containerRef}
@@ -795,6 +1040,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
               preserveAspectRatio="xMinYMin meet"
               className="absolute inset-0 h-full w-full touch-none cursor-crosshair"
               onPointerMove={handlePointerMove}
+              onPointerDown={handleSvgPointerDown}
               onPointerUp={handlePointerUp}
               onPointerLeave={handlePointerUp}
               onPointerCancel={handlePointerUp}
@@ -804,6 +1050,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
               {drawGrid()}
               {drawDomainTimeGuide()}
               {CHANNELS.map(ch => drawCurve(ch))}
+              {drawBoxSelection()}
             </svg>
             <div className="absolute right-3 top-3 flex items-center gap-1 rounded-md border border-zinc-800 bg-black/80 p-1 shadow-xl backdrop-blur">
               <button
@@ -921,7 +1168,57 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 bg-[#09090b]" aria-hidden="true" />
+      <div className="min-h-0 flex-1 bg-[#09090b] px-5 py-4">
+        {selectedTransformSummary && (
+          <div className="flex max-w-3xl flex-wrap items-center gap-2 rounded border border-zinc-900/90 bg-black/40 p-2 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
+            <span className="mr-2 font-bold text-zinc-300">
+              {selectedTransformSummary.count} Points
+            </span>
+            <label className="inline-flex items-center gap-1">
+              T Span
+              <span className="text-zinc-500">[</span>
+              <span className="w-10 text-right text-zinc-300">{selectedTransformSummary.timeSpan.toFixed(3)}</span>
+              <input
+                type="range"
+                min={MIN_TRANSFORM_SPAN}
+                max="1"
+                step="0.001"
+                value={Math.max(MIN_TRANSFORM_SPAN, selectedTransformSummary.timeSpan)}
+                onChange={(event) => scaleSelectedSpan('time', Number(event.target.value))}
+                className="h-1 w-24 accent-zinc-300"
+                aria-label="Scale selected point time span"
+              />
+              <span className="text-zinc-500">]</span>
+            </label>
+            <label className="inline-flex items-center gap-1">
+              V Span
+              <span className="text-zinc-500">[</span>
+              <span className="w-10 text-right text-zinc-300">{selectedTransformSummary.valueSpan.toFixed(3)}</span>
+              <input
+                type="range"
+                min={MIN_TRANSFORM_SPAN}
+                max="2"
+                step="0.001"
+                value={Math.max(MIN_TRANSFORM_SPAN, selectedTransformSummary.valueSpan)}
+                onChange={(event) => scaleSelectedSpan('value', Number(event.target.value))}
+                className="h-1 w-24 accent-zinc-300"
+                aria-label="Scale selected point value span"
+              />
+              <span className="text-zinc-500">]</span>
+            </label>
+            <span className="text-zinc-600">Drag selected point to move group at 50% sensitivity</span>
+            <button
+              type="button"
+              title="Clear multi-point selection"
+              aria-label="Clear multi-point selection"
+              onClick={() => setMultiSelectedPoints([])}
+              className="ml-auto h-7 rounded border border-zinc-800 px-2 text-zinc-500 hover:border-zinc-600 hover:text-zinc-100"
+            >
+              Clear
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 };
