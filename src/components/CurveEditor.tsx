@@ -138,11 +138,13 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   const [multiSelectedPoints, setMultiSelectedPoints] = useState<SelectedPointRef[]>([]);
   const [boxSelection, setBoxSelection] = useState<BoxSelection | null>(null);
   const [domainGuideDrag, setDomainGuideDrag] = useState<DomainGuideDrag | null>(null);
+  const [liveDomainTime, setLiveDomainTime] = useState<number | null>(null);
   const liveCurveRef = useRef<ColorCurve>(curve);
   const dragGestureRef = useRef<DragGesture | null>(null);
   const latestCursorAnchorRef = useRef({ time: spaceLever, ratio: 0.5 });
 
   const activeCurveData = draggingPoint ? localCurve : curve;
+  const displayDomainTime = liveDomainTime ?? domainTime;
   const editableChannels = CHANNELS.filter(channel => editChannels[channel]);
   const isMultiSelected = (selection: SelectedPointRef) =>
     multiSelectedPoints.some(point => point.channel === selection.channel && point.pointId === selection.pointId);
@@ -185,7 +187,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   const fallbackFocusedPoint = useMemo(() => {
     if (explicitlySelectedCurvePoint) return null;
 
-    const targetTime = domainTime ?? 0.5;
+    const targetTime = displayDomainTime ?? 0.5;
     return editableChannels.reduce((nearest, channel) => {
       return activeCurveData[channel].reduce((channelNearest, point) => {
         const distance = Math.abs(point.time - targetTime);
@@ -200,7 +202,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
         return channelNearest;
       }, nearest);
     }, null as { channel: Channel; point: CurvePoint; distance: number; middleBias: number } | null);
-  }, [activeCurveData, domainTime, editableChannels, explicitlySelectedCurvePoint]);
+  }, [activeCurveData, displayDomainTime, editableChannels, explicitlySelectedCurvePoint]);
   const focusedPointRef = selectedPoint && explicitlySelectedCurvePoint
     ? { channel: selectedPoint.channel, point: explicitlySelectedCurvePoint }
     : fallbackFocusedPoint;
@@ -317,6 +319,9 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   const getPlotRatio = (x: number) =>
     Math.max(0, Math.min(1, (x - PLOT_RECT.left) / PLOT_RECT.width));
 
+  const getDomainTimeFromSvgPoint = (point: { x: number; y: number }) =>
+    Math.max(0, Math.min(1, screenToCurve(point).time));
+
   const updateDomainTimeFromSvgPoint = (point: { x: number; y: number }, commit = false) => {
     const nextTime = Math.max(0, Math.min(1, screenToCurve(point).time));
     onDomainTimeChange?.(nextTime, { commit });
@@ -397,13 +402,13 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     if (findNearestEditablePoint(point)) return;
 
     e.preventDefault();
-    if (domainTime !== undefined && onDomainTimeChange) {
-      const guideX = timeToX(domainTime, computedViewport, PLOT_RECT);
+    if (displayDomainTime !== undefined && onDomainTimeChange) {
+      const guideX = timeToX(displayDomainTime, computedViewport, PLOT_RECT);
       const isInGuideX = Math.abs(point.x - guideX) <= DOMAIN_GUIDE_HIT_RADIUS;
       const isInGuideY = point.y >= PLOT_RECT.top && point.y <= PLOT_RECT.bottom + 14;
       if (isInGuideX && isInGuideY) {
         setDomainGuideDrag({ pointerId: e.pointerId });
-        updateDomainTimeFromSvgPoint(point);
+        setLiveDomainTime(getDomainTimeFromSvgPoint(point));
         e.currentTarget.setPointerCapture(e.pointerId);
         return;
       }
@@ -432,7 +437,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     if (domainGuideDrag) {
       if (!svgPoint || domainGuideDrag.pointerId !== e.pointerId) return;
       e.preventDefault();
-      updateDomainTimeFromSvgPoint(svgPoint);
+      setLiveDomainTime(getDomainTimeFromSvgPoint(svgPoint));
       return;
     }
 
@@ -548,11 +553,14 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
       const svgPoint = getSvgPoint(e.clientX, e.clientY);
       if (svgPoint) {
         updateDomainTimeFromSvgPoint(svgPoint, true);
+      } else if (liveDomainTime !== null) {
+        onDomainTimeChange?.(liveDomainTime, { commit: true });
       }
       if (e.currentTarget.hasPointerCapture(e.pointerId)) {
         e.currentTarget.releasePointerCapture(e.pointerId);
       }
       setDomainGuideDrag(null);
+      setLiveDomainTime(null);
       return;
     }
 
@@ -974,10 +982,10 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   };
 
   const drawDomainTimeGuide = () => {
-    if (domainTime === undefined) return null;
-    if (domainTime < viewMinX || domainTime > viewMaxX) return null;
+    if (displayDomainTime === undefined) return null;
+    if (displayDomainTime < viewMinX || displayDomainTime > viewMaxX) return null;
 
-    const x = timeToX(domainTime, computedViewport, PLOT_RECT);
+    const x = timeToX(displayDomainTime, computedViewport, PLOT_RECT);
 
     return (
       <g pointerEvents="none">
