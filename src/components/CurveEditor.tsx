@@ -4,7 +4,7 @@
 //! - [Rule 3.3] Controls below the horizontal coordinate axis line must use a full-width layout split: active channel selection selectors anchor left under the 0.00 grid origin column; point metadata properties and numeric inspectors float right under the 1.00 grid end column.
 //! - [Rule 3.4] In portrait or vertically surplus layouts, the curve filter, domain bounds, and selected point inspectors must remain snug to the bottom edge of the curve display; any unused vertical space belongs below those controls.
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useId, useMemo, useRef, useState } from 'react';
 import { Maximize2, Minus, Plus } from 'lucide-react';
 import { ColorCurve, Channel, ChannelMask, CurvePoint } from '../types';
 import { cn } from '../lib/utils';
@@ -88,7 +88,7 @@ const MIN_ZOOM_X = 1;
 const MAX_ZOOM_X = 32;
 const ZOOM_BUTTON_FACTOR = 1.25;
 const MIN_TRANSFORM_SPAN = 0.001;
-const DISPLAY_CURVE_SAMPLES = 192;
+const DISPLAY_SAMPLE_PIXEL_STEP = 3;
 const DISPLAY_SAMPLE_TIME_PRECISION = 9;
 type DragGesture = {
   channel: Channel;
@@ -142,6 +142,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   const liveCurveRef = useRef<ColorCurve>(curve);
   const dragGestureRef = useRef<DragGesture | null>(null);
   const latestCursorAnchorRef = useRef({ time: spaceLever, ratio: 0.5 });
+  const plotClipId = `curve-plot-${useId().replace(/:/g, '')}`;
 
   const activeCurveData = draggingPoint ? localCurve : curve;
   const displayDomainTime = liveDomainTime ?? domainTime;
@@ -823,19 +824,27 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     if (sortedData.length > 0) {
       const startTime = sortedData[0].time;
       const endTime = sortedData[sortedData.length - 1].time;
-      const span = Math.max(POINT_EPSILON, endTime - startTime);
-      const sampleCount = Math.max(2, Math.ceil(DISPLAY_CURVE_SAMPLES * span));
+      const visibleStartTime = Math.max(startTime, viewMinX);
+      const visibleEndTime = Math.min(endTime, viewMaxX);
+      const visibleSpan = visibleEndTime - visibleStartTime;
 
       const sampleTimes = new Map<string, number>();
       const addSampleTime = (time: number) => {
-        const clampedTime = Math.max(startTime, Math.min(endTime, time));
+        const clampedTime = Math.max(visibleStartTime, Math.min(visibleEndTime, time));
         sampleTimes.set(clampedTime.toFixed(DISPLAY_SAMPLE_TIME_PRECISION), clampedTime);
       };
 
-      for (let sampleIndex = 0; sampleIndex <= sampleCount; sampleIndex++) {
-        addSampleTime(startTime + span * (sampleIndex / sampleCount));
+      if (visibleSpan >= 0) {
+        const sampleCount = Math.max(2, Math.ceil(PLOT_RECT.width / DISPLAY_SAMPLE_PIXEL_STEP));
+        for (let sampleIndex = 0; sampleIndex <= sampleCount; sampleIndex++) {
+          addSampleTime(visibleStartTime + visibleSpan * (sampleIndex / sampleCount));
+        }
+        sortedData.forEach(point => {
+          if (point.time >= visibleStartTime - POINT_EPSILON && point.time <= visibleEndTime + POINT_EPSILON) {
+            addSampleTime(point.time);
+          }
+        });
       }
-      sortedData.forEach(point => addSampleTime(point.time));
 
       [...sampleTimes.values()].sort((a, b) => a - b).forEach((time, sampleIndex) => {
         const value = clampDisplayValue(evaluateCurve(sortedData, tangents, time, interpMode));
@@ -856,7 +865,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     const extensionOpacity = Math.min(strokeOpacity, 0.18);
 
     return (
-      <g key={channel}>
+      <g key={channel} clipPath={`url(#${plotClipId})`}>
         {startBoundary.time > POINT_EPSILON && (
           <line
             x1={timeToX(0, computedViewport, PLOT_RECT)}
@@ -1098,6 +1107,16 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
               onDoubleClick={handleSvgDoubleClick}
               onWheel={handleWheel}
             >
+              <defs>
+                <clipPath id={plotClipId}>
+                  <rect
+                    x={PLOT_RECT.left}
+                    y={PLOT_RECT.top}
+                    width={PLOT_RECT.width}
+                    height={PLOT_RECT.height}
+                  />
+                </clipPath>
+              </defs>
               {drawGrid()}
               {drawDomainTimeGuide()}
               {CHANNELS.map(ch => drawCurve(ch))}

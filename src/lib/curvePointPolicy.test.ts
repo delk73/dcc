@@ -76,6 +76,17 @@ const segmentPoints: CurvePoint[] = [
 assert.equal(getOutgoingInterpolation(segmentPoints[0]), 'constant');
 assert.equal(evaluateCurve(segmentPoints, computeTangents(segmentPoints), 0.5, 'linear'), 0);
 
+const peakedSmoothCurve = migrateKeyframesToCurvePoints([
+  { time: 0, value: 0 },
+  { time: 0.5, value: 1 },
+  { time: 1, value: 0 }
+]);
+const peakedTangents = computeTangents(peakedSmoothCurve);
+for (let sample = 0; sample <= 20; sample++) {
+  const value = evaluateCurve(peakedSmoothCurve, peakedTangents, sample / 20, 'cubic');
+  assert.ok(value >= -0.000001 && value <= 1.000001, `smooth curve overshot at sample ${sample}: ${value}`);
+}
+
 assert.equal(toTimeKey(0.5), toTimeKey(0.500000001));
 assert.equal(fromTimeKey(toTimeKey(0.5)), 0.5);
 assert.equal(toTimeKey(-1), 0);

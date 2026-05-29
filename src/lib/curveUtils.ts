@@ -121,16 +121,44 @@ export function computeTangents(data: CurvePoint[]): number[] {
   const n = data.length;
   const tangents = new Array(n).fill(0);
   if (n < 2) return tangents;
-  for (let i = 0; i < n; i++) {
-    if (i === 0) {
-      tangents[i] = (data[1].value - data[0].value) / Math.max(0.0001, data[1].time - data[0].time);
-    } else if (i === n - 1) {
-      tangents[i] = (data[i].value - data[i-1].value) / Math.max(0.0001, data[i].time - data[i-1].time);
+
+  const segmentSlopes = new Array(n - 1).fill(0);
+  for (let i = 0; i < n - 1; i++) {
+    segmentSlopes[i] = (data[i + 1].value - data[i].value) / Math.max(0.0001, data[i + 1].time - data[i].time);
+  }
+
+  tangents[0] = segmentSlopes[0];
+  tangents[n - 1] = segmentSlopes[n - 2];
+
+  for (let i = 1; i < n - 1; i++) {
+    const previousSlope = segmentSlopes[i - 1];
+    const nextSlope = segmentSlopes[i];
+
+    if (previousSlope === 0 || nextSlope === 0 || Math.sign(previousSlope) !== Math.sign(nextSlope)) {
+      tangents[i] = 0;
     } else {
-      // Catmull-Rom / average secant (Auto tangency)
-      tangents[i] = (data[i+1].value - data[i-1].value) / Math.max(0.0001, data[i+1].time - data[i-1].time);
+      tangents[i] = (previousSlope + nextSlope) / 2;
     }
   }
+
+  for (let i = 0; i < n - 1; i++) {
+    const slope = segmentSlopes[i];
+    if (slope === 0) {
+      tangents[i] = 0;
+      tangents[i + 1] = 0;
+      continue;
+    }
+
+    const alpha = tangents[i] / slope;
+    const beta = tangents[i + 1] / slope;
+    const magnitude = Math.hypot(alpha, beta);
+    if (magnitude > 3) {
+      const scale = 3 / magnitude;
+      tangents[i] = scale * alpha * slope;
+      tangents[i + 1] = scale * beta * slope;
+    }
+  }
+
   return tangents;
 }
 
