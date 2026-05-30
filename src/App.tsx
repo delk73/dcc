@@ -2,6 +2,7 @@ import React, { useReducer, useState, useEffect, useMemo, useRef } from 'react';
 import { get, set } from 'idb-keyval';
 import { ColorCurve, Channel, LibraryCurve } from './types';
 import { CurveEditor } from './components/CurveEditor';
+import { CurvePasteArea } from './components/CurvePasteArea';
 import { AtlasViewer } from './components/AtlasViewer';
 import { Download, RotateCcw, Settings2 } from 'lucide-react';
 import { cn } from './lib/utils';
@@ -342,7 +343,11 @@ export default function App() {
     window.setTimeout(() => URL.revokeObjectURL(finalUrl), 0);
   };
 
-  const renderCurveEditorPanel = (className = '', editorClassName = '') => (
+  const renderCurveEditorPanel = (className = '', editorClassName = '') => {
+    const pasteAreaHeight = layout.curveEditor.height >= 520 ? 156 : 132;
+    const editorHeight = Math.max(240, layout.curveEditor.height - pasteAreaHeight - 88);
+
+    return (
     <div className={cn("bg-[#09090b] border border-zinc-800 rounded-xl p-2 gap-2 min-h-0 flex flex-col", className)}>
        <div className="shrink-0 flex items-center">
           <h3 className="text-[10px] uppercase tracking-widest font-bold text-zinc-300 mr-1">Curve Editor</h3>
@@ -365,11 +370,16 @@ export default function App() {
           curveIndexLabel={activeCurveIndexInfo?.label}
           curveIndexTitle={activeCurveIndexInfo?.title}
           width={Math.max(0, layout.curveEditor.width - 16)}
-          height={Math.max(240, layout.curveEditor.height - 72)}
+          height={editorHeight}
           className={editorClassName}
        />
+       <CurvePasteArea
+          onImport={importCurve}
+          className={cn(layout.curveEditor.height < 520 && "hidden sm:block")}
+       />
     </div>
-  );
+    );
+  };
 
   const renderAtlasPanel = (className = '') => (
     <AtlasViewer

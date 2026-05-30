@@ -4,7 +4,7 @@
 //! - [Rule 3.3] Controls below the horizontal coordinate axis line must use a full-width layout split: active channel selection selectors anchor left under the 0.00 grid origin column; point metadata properties and numeric inspectors float right under the 1.00 grid end column.
 //! - [Rule 3.4] In portrait or vertically surplus layouts, the curve filter, domain bounds, and selected point inspectors must remain snug to the bottom edge of the curve display; any unused vertical space belongs below those controls.
 
-import React, { useId, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Maximize2, Minus, Plus } from 'lucide-react';
 import { ColorCurve, Channel, ChannelMask, CurvePoint } from '../types';
 import { cn } from '../lib/utils';
@@ -110,6 +110,53 @@ type DomainGuideDrag = {
   pointerId: number;
 };
 
+const buildDisplayCurvePath = (
+  data: CurvePoint[],
+  viewport: CurveViewport,
+  interpMode: InterpMode
+) => {
+  if (data.length === 0) return '';
+
+  const sortedData = [...data].sort((a,b) => a.time - b.time);
+  const tangents = computeTangents(sortedData);
+  const startTime = sortedData[0].time;
+  const endTime = sortedData[sortedData.length - 1].time;
+  const visibleStartTime = Math.max(startTime, viewport.timeMin);
+  const visibleEndTime = Math.min(endTime, viewport.timeMax);
+  const visibleSpan = visibleEndTime - visibleStartTime;
+  let pathD = '';
+
+  if (visibleSpan < 0) return pathD;
+
+  const sampleTimes = new Map<string, number>();
+  const addSampleTime = (time: number) => {
+    const clampedTime = Math.max(visibleStartTime, Math.min(visibleEndTime, time));
+    sampleTimes.set(clampedTime.toFixed(DISPLAY_SAMPLE_TIME_PRECISION), clampedTime);
+  };
+  const sampleCount = Math.max(2, Math.ceil(PLOT_RECT.width / DISPLAY_SAMPLE_PIXEL_STEP));
+
+  for (let sampleIndex = 0; sampleIndex <= sampleCount; sampleIndex++) {
+    addSampleTime(visibleStartTime + visibleSpan * (sampleIndex / sampleCount));
+  }
+  sortedData.forEach(point => {
+    if (point.time >= visibleStartTime - POINT_EPSILON && point.time <= visibleEndTime + POINT_EPSILON) {
+      addSampleTime(point.time);
+    }
+  });
+
+  [...sampleTimes.values()].sort((a, b) => a - b).forEach((time, sampleIndex) => {
+    const value = Math.max(
+      viewport.valueMin,
+      Math.min(viewport.valueMax, evaluateCurve(sortedData, tangents, time, interpMode))
+    );
+    const x = timeToX(time, viewport, PLOT_RECT);
+    const y = valueToY(value, viewport, PLOT_RECT);
+    pathD += `${sampleIndex === 0 ? 'M' : 'L'} ${x},${y} `;
+  });
+
+  return pathD;
+};
+
 export const CurveEditor: React.FC<CurveEditorProps> = ({
   curve,
   onChange,
@@ -142,6 +189,10 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   const liveCurveRef = useRef<ColorCurve>(curve);
   const dragGestureRef = useRef<DragGesture | null>(null);
   const latestCursorAnchorRef = useRef({ time: spaceLever, ratio: 0.5 });
+  const cursorFrameRef = useRef<number | null>(null);
+  const pendingCursorValueRef = useRef<{ time: number; value: number } | null>(null);
+  const curveFrameRef = useRef<number | null>(null);
+  const pendingCurveRef = useRef<ColorCurve | null>(null);
   const plotClipId = `curve-plot-${useId().replace(/:/g, '')}`;
 
   const activeCurveData = draggingPoint ? localCurve : curve;
@@ -263,6 +314,53 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
 
   const clampDisplayValue = (value: number, sourceViewport = computedViewport) =>
     Math.max(sourceViewport.valueMin, Math.min(sourceViewport.valueMax, value));
+
+  const scheduleCursorValue = (value: { time: number; value: number }) => {
+    pendingCursorValueRef.current = value;
+    if (cursorFrameRef.current !== null) return;
+
+    cursorFrameRef.current = window.requestAnimationFrame(() => {
+      cursorFrameRef.current = null;
+      const nextValue = pendingCursorValueRef.current;
+      pendingCursorValueRef.current = null;
+      if (nextValue) setCursorValue(nextValue);
+    });
+  };
+
+  const publishDragCurve = (nextCurve: ColorCurve) => {
+    liveCurveRef.current = nextCurve;
+    pendingCurveRef.current = nextCurve;
+    if (curveFrameRef.current !== null) return;
+
+    curveFrameRef.current = window.requestAnimationFrame(() => {
+      curveFrameRef.current = null;
+      const curveToPublish = pendingCurveRef.current;
+      pendingCurveRef.current = null;
+      if (!curveToPublish) return;
+
+      setLocalCurve(curveToPublish);
+      onChange(curveToPublish);
+    });
+  };
+
+  const cancelPendingDragCurvePublish = () => {
+    if (curveFrameRef.current !== null) {
+      window.cancelAnimationFrame(curveFrameRef.current);
+      curveFrameRef.current = null;
+    }
+    pendingCurveRef.current = null;
+  };
+
+  useEffect(() => {
+    return () => {
+      if (cursorFrameRef.current !== null) {
+        window.cancelAnimationFrame(cursorFrameRef.current);
+      }
+      if (curveFrameRef.current !== null) {
+        window.cancelAnimationFrame(curveFrameRef.current);
+      }
+    };
+  }, []);
 
   const adjustZoom = (factor: number) => {
     setZoomAnchor(latestCursorAnchorRef.current);
@@ -428,7 +526,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     const svgPoint = getSvgPoint(e.clientX, e.clientY);
     if (svgPoint) {
       const nextCursorValue = screenToCurve(svgPoint);
-      setCursorValue(nextCursorValue);
+      scheduleCursorValue(nextCursorValue);
       latestCursorAnchorRef.current = {
         time: nextCursorValue.time,
         ratio: getPlotRatio(svgPoint.x),
@@ -519,8 +617,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
       }
 
       liveCurveRef.current = nextCurve;
-      setLocalCurve(nextCurve);
-      onChange(nextCurve);
+      publishDragCurve(nextCurve);
       return;
     }
 
@@ -544,9 +641,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
       [draggingPoint.channel]: channelData
     };
     
-    liveCurveRef.current = newCurve;
-    setLocalCurve(newCurve);
-    onChange(newCurve);
+    publishDragCurve(newCurve);
   };
 
   const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -592,6 +687,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
       }
 
       if (dragGestureRef.current?.hasMoved) {
+        cancelPendingDragCurvePublish();
         const currentCurve = liveCurveRef.current;
         const channelsToOrder = dragGestureRef.current.multiDrag
           ? Array.from(new Set(multiSelectedPoints.map(selection => selection.channel)))
@@ -755,6 +851,25 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     onChange(nextCurve);
   };
 
+  const curvePaths: Record<Channel, string> = {
+    r: useMemo(
+      () => buildDisplayCurvePath(activeCurveData.r, computedViewport, interpMode),
+      [activeCurveData.r, computedViewport, interpMode]
+    ),
+    g: useMemo(
+      () => buildDisplayCurvePath(activeCurveData.g, computedViewport, interpMode),
+      [activeCurveData.g, computedViewport, interpMode]
+    ),
+    b: useMemo(
+      () => buildDisplayCurvePath(activeCurveData.b, computedViewport, interpMode),
+      [activeCurveData.b, computedViewport, interpMode]
+    ),
+    a: useMemo(
+      () => buildDisplayCurvePath(activeCurveData.a, computedViewport, interpMode),
+      [activeCurveData.a, computedViewport, interpMode]
+    ),
+  };
+
   const drawGrid = () => {
     const lines = [];
 
@@ -815,44 +930,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   const drawCurve = (channel: Channel) => {
     const data = activeCurveData[channel];
     if (data.length === 0) return null;
-
-    // We sort just for drawing, to ensure correct lines even while dragging
-    const sortedData = [...data].sort((a,b) => a.time - b.time);
-    
-    const tangents = computeTangents(sortedData);
-    let pathD = '';
-    if (sortedData.length > 0) {
-      const startTime = sortedData[0].time;
-      const endTime = sortedData[sortedData.length - 1].time;
-      const visibleStartTime = Math.max(startTime, viewMinX);
-      const visibleEndTime = Math.min(endTime, viewMaxX);
-      const visibleSpan = visibleEndTime - visibleStartTime;
-
-      const sampleTimes = new Map<string, number>();
-      const addSampleTime = (time: number) => {
-        const clampedTime = Math.max(visibleStartTime, Math.min(visibleEndTime, time));
-        sampleTimes.set(clampedTime.toFixed(DISPLAY_SAMPLE_TIME_PRECISION), clampedTime);
-      };
-
-      if (visibleSpan >= 0) {
-        const sampleCount = Math.max(2, Math.ceil(PLOT_RECT.width / DISPLAY_SAMPLE_PIXEL_STEP));
-        for (let sampleIndex = 0; sampleIndex <= sampleCount; sampleIndex++) {
-          addSampleTime(visibleStartTime + visibleSpan * (sampleIndex / sampleCount));
-        }
-        sortedData.forEach(point => {
-          if (point.time >= visibleStartTime - POINT_EPSILON && point.time <= visibleEndTime + POINT_EPSILON) {
-            addSampleTime(point.time);
-          }
-        });
-      }
-
-      [...sampleTimes.values()].sort((a, b) => a - b).forEach((time, sampleIndex) => {
-        const value = clampDisplayValue(evaluateCurve(sortedData, tangents, time, interpMode));
-        const x = timeToX(time, computedViewport, PLOT_RECT);
-        const y = valueToY(value, computedViewport, PLOT_RECT);
-        pathD += `${sampleIndex === 0 ? 'M' : 'L'} ${x},${y} `;
-      });
-    }
+    const pathD = curvePaths[channel];
     
     const isDraggingThis = draggingPoint?.channel === channel;
     const isEditable = editChannels[channel];
