@@ -1,17 +1,23 @@
-import type { Channel, ColorCurve, CurvePoint } from '../types';
+import type { Channel, ColorCurve, CurvePoint, LibraryCurve } from '../types';
 import { orderCurvePoints } from './curvePointPolicy';
+import { computeTangents, evaluateCurve } from './curveUtils';
 
-export type CurvePasteImageMode = 'color-curve' | 'sorted-pixels' | 'top-colors';
+export type CurvePasteImageMode = 'color-curve' | 'sorted-pixels' | 'top-colors' | 'row-match-2d';
 
 export type CurvePasteImageResult = {
   curve: ColorCurve;
+  spaceLibrary?: LibraryCurve[];
   previewColors: string[];
   summary: string;
 };
 
 const CHANNELS = ['r', 'g', 'b', 'a'] as const;
 const SAMPLE_COUNT = 16;
-const MAX_SOURCE_SIZE = 192;
+const EVALUATED_ROW_SAMPLE_COUNT = 32;
+const CURVE_SAMPLE_ERROR_THRESHOLD = 0.012;
+const ROW_MATCH_ERROR_THRESHOLD = 0.045;
+const MAX_ROW_MATCH_SPACE_ROWS = 48;
+export const MAX_SOURCE_SIZE = 192;
 
 type Rgba = {
   r: number;
@@ -24,6 +30,20 @@ type WeightedColor = Rgba & {
   count: number;
 };
 
+type RowSignature = {
+  y: number;
+  position: number;
+  samples: Array<{ time: number; color: Rgba }>;
+  curve: ColorCurve;
+  preparedCurve: PreparedCurve;
+  evaluatedSamples: Rgba[];
+};
+
+type PreparedCurve = {
+  sorted: ColorCurve;
+  tangents: Record<Channel, number[]>;
+};
+
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 
 const toHex = (color: Rgba) =>
@@ -34,6 +54,25 @@ const luminance = (color: Rgba) =>
 
 const colorDistance = (a: Rgba, b: Rgba) =>
   Math.abs(a.r - b.r) + Math.abs(a.g - b.g) + Math.abs(a.b - b.b);
+
+const rgbaDistance = (a: Rgba, b: Rgba) =>
+  colorDistance(a, b) + Math.abs(a.a - b.a);
+
+const lerpRgba = (a: Rgba, b: Rgba, t: number): Rgba => ({
+  r: a.r + ((b.r - a.r) * t),
+  g: a.g + ((b.g - a.g) * t),
+  b: a.b + ((b.b - a.b) * t),
+  a: a.a + ((b.a - a.a) * t)
+});
+
+const lerpSampleColor = (
+  start: { time: number; color: Rgba },
+  end: { time: number; color: Rgba },
+  time: number
+) => {
+  const t = (time - start.time) / (end.time - start.time || 1);
+  return lerpRgba(start.color, end.color, t);
+};
 
 const createImportedPoint = (
   channel: Channel,
@@ -73,6 +112,15 @@ const buildCurve = (samples: Array<{ time: number; color: Rgba }>): ColorCurve =
   }, { r: [], g: [], b: [], a: [] } as ColorCurve);
 };
 
+export const getScaledImageSize = (naturalWidth: number, naturalHeight: number) => {
+  const scale = Math.min(1, MAX_SOURCE_SIZE / Math.max(naturalWidth, naturalHeight));
+
+  return {
+    width: Math.max(1, Math.round(naturalWidth * scale)),
+    height: Math.max(1, Math.round(naturalHeight * scale))
+  };
+};
+
 const readImagePixels = async (file: File) => {
   const imageUrl = URL.createObjectURL(file);
 
@@ -84,9 +132,7 @@ const readImagePixels = async (file: File) => {
       img.src = imageUrl;
     });
 
-    const scale = Math.min(1, MAX_SOURCE_SIZE / Math.max(image.naturalWidth, image.naturalHeight));
-    const width = Math.max(1, Math.round(image.naturalWidth * scale));
-    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const { width, height } = getScaledImageSize(image.naturalWidth, image.naturalHeight);
     const canvas = document.createElement('canvas');
     canvas.width = width;
     canvas.height = height;
@@ -139,6 +185,215 @@ const curveFromColumns = (width: number, height: number, data: Uint8ClampedArray
     curve: buildCurve(samples),
     previewColors: samples.map(sample => toHex(sample.color)),
     summary: `${samples.length} column samples`
+  };
+};
+
+const rowSamples = (width: number, y: number, data: Uint8ClampedArray) =>
+  Array.from({ length: SAMPLE_COUNT }, (_, sampleIndex) => {
+    const x = Math.round((sampleIndex / (SAMPLE_COUNT - 1)) * (width - 1));
+
+    return {
+      time: sampleIndex / (SAMPLE_COUNT - 1),
+      color: pixelAt(data, (y * width + x) * 4)
+    };
+  });
+
+export const selectSparseCurveSamples = (
+  samples: Array<{ time: number; color: Rgba }>,
+  errorThreshold = CURVE_SAMPLE_ERROR_THRESHOLD
+) => {
+  if (samples.length <= 2) return samples;
+
+  const selected = new Set([0, samples.length - 1]);
+  const segments = [{ startIndex: 0, endIndex: samples.length - 1 }];
+
+  while (segments.length > 0) {
+    let bestSegmentIndex = -1;
+    let bestSampleIndex = -1;
+    let bestError = 0;
+
+    segments.forEach((segment, segmentIndex) => {
+      const start = samples[segment.startIndex];
+      const end = samples[segment.endIndex];
+
+      for (let index = segment.startIndex + 1; index < segment.endIndex; index += 1) {
+        const expected = lerpSampleColor(start, end, samples[index].time);
+        const error = rgbaDistance(expected, samples[index].color);
+        if (error > bestError) {
+          bestError = error;
+          bestSampleIndex = index;
+          bestSegmentIndex = segmentIndex;
+        }
+      }
+    });
+
+    if (bestSegmentIndex === -1 || bestSampleIndex === -1 || bestError <= errorThreshold) break;
+
+    const [segment] = segments.splice(bestSegmentIndex, 1);
+    selected.add(bestSampleIndex);
+
+    if (bestSampleIndex - segment.startIndex > 1) {
+      segments.push({ startIndex: segment.startIndex, endIndex: bestSampleIndex });
+    }
+    if (segment.endIndex - bestSampleIndex > 1) {
+      segments.push({ startIndex: bestSampleIndex, endIndex: segment.endIndex });
+    }
+  }
+
+  return [...selected]
+    .sort((a, b) => a - b)
+    .map(index => samples[index]);
+};
+
+const prepareCurve = (curve: ColorCurve): PreparedCurve => {
+  const sorted = {
+    r: [...curve.r].sort((a, b) => a.time - b.time),
+    g: [...curve.g].sort((a, b) => a.time - b.time),
+    b: [...curve.b].sort((a, b) => a.time - b.time),
+    a: [...curve.a].sort((a, b) => a.time - b.time)
+  };
+  const tangents = {
+    r: computeTangents(sorted.r),
+    g: computeTangents(sorted.g),
+    b: computeTangents(sorted.b),
+    a: computeTangents(sorted.a)
+  };
+
+  return { sorted, tangents };
+};
+
+const evaluatePreparedCurve = ({ sorted, tangents }: PreparedCurve, time: number): Rgba => ({
+  r: clamp01(evaluateCurve(sorted.r, tangents.r, time, 'linear')),
+  g: clamp01(evaluateCurve(sorted.g, tangents.g, time, 'linear')),
+  b: clamp01(evaluateCurve(sorted.b, tangents.b, time, 'linear')),
+  a: clamp01(evaluateCurve(sorted.a, tangents.a, time, 'linear'))
+});
+
+const evaluateRowSamples = (preparedCurve: PreparedCurve) => {
+  return Array.from({ length: EVALUATED_ROW_SAMPLE_COUNT }, (_, index) => {
+    const time = index / (EVALUATED_ROW_SAMPLE_COUNT - 1);
+    return evaluatePreparedCurve(preparedCurve, time);
+  });
+};
+
+const createRowSignatures = (width: number, height: number, data: Uint8ClampedArray): RowSignature[] =>
+  Array.from({ length: height }, (_, y) => {
+    const samples = selectSparseCurveSamples(rowSamples(width, y, data));
+    const curve = buildCurve(samples);
+    const preparedCurve = prepareCurve(curve);
+
+    return {
+      y,
+      position: height === 1 ? 0 : 1 - (y / (height - 1)),
+      samples,
+      curve,
+      preparedCurve,
+      evaluatedSamples: evaluateRowSamples(preparedCurve)
+    };
+  });
+
+const rowInterpolationError = (
+  start: RowSignature,
+  end: RowSignature,
+  candidate: RowSignature
+) => {
+  const t = (candidate.y - start.y) / (end.y - start.y || 1);
+
+  const keyframeError = candidate.samples.reduce((maxError, sample) => {
+    const expected = lerpRgba(
+      evaluatePreparedCurve(start.preparedCurve, sample.time),
+      evaluatePreparedCurve(end.preparedCurve, sample.time),
+      t
+    );
+    return Math.max(maxError, rgbaDistance(expected, sample.color));
+  }, 0);
+
+  const evaluatedCurveError = candidate.evaluatedSamples.reduce((maxError, sample, index) => {
+    const expected = lerpRgba(start.evaluatedSamples[index], end.evaluatedSamples[index], t);
+    return Math.max(maxError, rgbaDistance(expected, sample));
+  }, 0);
+
+  return Math.max(keyframeError, evaluatedCurveError);
+};
+
+const findWorstRowError = (
+  signatures: RowSignature[],
+  startIndex: number,
+  endIndex: number
+) => {
+  let rowIndex = -1;
+  let error = 0;
+
+  for (let index = startIndex + 1; index < endIndex; index += 1) {
+    const nextError = rowInterpolationError(signatures[startIndex], signatures[endIndex], signatures[index]);
+    if (nextError > error) {
+      error = nextError;
+      rowIndex = index;
+    }
+  }
+
+  return { startIndex, endIndex, rowIndex, error };
+};
+
+export const selectSparseImageRows = (
+  signatures: RowSignature[],
+  errorThreshold = ROW_MATCH_ERROR_THRESHOLD,
+  maxRows = MAX_ROW_MATCH_SPACE_ROWS
+): RowSignature[] => {
+  if (signatures.length <= 2) return signatures;
+
+  const selected = new Set([0, signatures.length - 1]);
+  const segments = [findWorstRowError(signatures, 0, signatures.length - 1)];
+
+  while (segments.length > 0 && selected.size < maxRows) {
+    segments.sort((a, b) => b.error - a.error);
+    const segment = segments.shift();
+    if (!segment || segment.rowIndex === -1 || segment.error <= errorThreshold) break;
+    if (selected.has(segment.rowIndex)) continue;
+
+    selected.add(segment.rowIndex);
+
+    if (segment.rowIndex - segment.startIndex > 1) {
+      segments.push(findWorstRowError(signatures, segment.startIndex, segment.rowIndex));
+    }
+    if (segment.endIndex - segment.rowIndex > 1) {
+      segments.push(findWorstRowError(signatures, segment.rowIndex, segment.endIndex));
+    }
+  }
+
+  return [...selected]
+    .sort((a, b) => a - b)
+    .map(index => signatures[index]);
+};
+
+export const spaceLibraryFromImageRows = (
+  width: number,
+  height: number,
+  data: Uint8ClampedArray
+): LibraryCurve[] => (
+  selectSparseImageRows(createRowSignatures(width, height, data)).map((row, index) => {
+    return {
+      id: `paste_row_${row.y}_${width}x${height}`,
+      name: `Image Row ${index + 1}`,
+      category: 'Image Rows',
+      position: row.position,
+      curve: row.curve,
+      authored: true,
+      source: 'loaded'
+    };
+  })
+);
+
+const curveFromImageRows = (width: number, height: number, data: Uint8ClampedArray) => {
+  const spaceLibrary = spaceLibraryFromImageRows(width, height, data);
+  const previewRow = Math.max(0, Math.floor((height - 1) / 2));
+  const previewSamples = selectSparseCurveSamples(rowSamples(width, previewRow, data));
+
+  return {
+    curve: buildCurve(previewSamples),
+    spaceLibrary,
+    previewColors: previewSamples.map(sample => toHex(sample.color)),
+    summary: `${spaceLibrary.length} 2D row samples`
   };
 };
 
@@ -234,6 +489,8 @@ export async function imageFileToCurve(file: File, mode: CurvePasteImageMode): P
   const { width, height, data } = await readImagePixels(file);
 
   switch (mode) {
+    case 'row-match-2d':
+      return curveFromImageRows(width, height, data);
     case 'sorted-pixels':
       return curveFromSortedPixels(width, height, data);
     case 'top-colors':

@@ -259,6 +259,12 @@ export default function App() {
     updateActiveCurve(mergedCurve);
   };
 
+  const pushSpace = (importedLibrary: LibraryCurve[]) => {
+    dispatch({ type: 'reset-space', library: importedLibrary });
+    dispatch({ type: 'set-main-view', mainView: TWO_DIMENSIONAL_WORKSPACE_VIEW });
+    setAtlasTexture(null);
+  };
+
   const toggleEditChannel = (channel: Channel) => {
     dispatch({ type: 'toggle-edit-channel', channel });
   };
@@ -375,6 +381,7 @@ export default function App() {
        />
        <CurvePasteArea
           onImport={importCurve}
+          onPushSpace={pushSpace}
           className={cn(layout.curveEditor.height < 520 && "hidden sm:block")}
        />
     </div>
