@@ -2,11 +2,17 @@ import type { Channel, ColorCurve, CurvePoint, LibraryCurve } from '../types';
 import { orderCurvePoints } from './curvePointPolicy';
 import { computeTangents, evaluateCurve } from './curveUtils';
 
-export type CurvePasteImageMode = 'color-curve' | 'sorted-pixels' | 'top-colors' | 'row-match-2d';
+export type CurvePasteImageMode = 'color-curve' | 'sorted-pixels' | 'top-colors';
+export type CurvePasteSpaceMode = 'rows' | 'row-sorted-pixels';
 
 export type CurvePasteImageResult = {
   curve: ColorCurve;
-  spaceLibrary?: LibraryCurve[];
+  previewColors: string[];
+  summary: string;
+};
+
+export type CurvePasteSpaceResult = {
+  library: LibraryCurve[];
   previewColors: string[];
   summary: string;
 };
@@ -188,8 +194,25 @@ const curveFromColumns = (width: number, height: number, data: Uint8ClampedArray
   };
 };
 
-const rowSamples = (width: number, y: number, data: Uint8ClampedArray) =>
+const rowPixels = (width: number, y: number, data: Uint8ClampedArray) =>
+  Array.from({ length: width }, (_, x) => pixelAt(data, (y * width + x) * 4));
+
+const samplesFromPixels = (pixels: Rgba[]) =>
   Array.from({ length: SAMPLE_COUNT }, (_, sampleIndex) => {
+    const sourceIndex = Math.round((sampleIndex / (SAMPLE_COUNT - 1)) * (pixels.length - 1));
+
+    return {
+      time: sampleIndex / (SAMPLE_COUNT - 1),
+      color: pixels[sourceIndex] ?? { r: 0, g: 0, b: 0, a: 1 }
+    };
+  });
+
+const rowSamples = (width: number, y: number, data: Uint8ClampedArray, mode: CurvePasteSpaceMode) => {
+  if (mode === 'row-sorted-pixels') {
+    return samplesFromPixels(rowPixels(width, y, data).sort((a, b) => luminance(a) - luminance(b)));
+  }
+
+  return Array.from({ length: SAMPLE_COUNT }, (_, sampleIndex) => {
     const x = Math.round((sampleIndex / (SAMPLE_COUNT - 1)) * (width - 1));
 
     return {
@@ -197,6 +220,7 @@ const rowSamples = (width: number, y: number, data: Uint8ClampedArray) =>
       color: pixelAt(data, (y * width + x) * 4)
     };
   });
+};
 
 export const selectSparseCurveSamples = (
   samples: Array<{ time: number; color: Rgba }>,
@@ -276,9 +300,14 @@ const evaluateRowSamples = (preparedCurve: PreparedCurve) => {
   });
 };
 
-const createRowSignatures = (width: number, height: number, data: Uint8ClampedArray): RowSignature[] =>
+const createRowSignatures = (
+  width: number,
+  height: number,
+  data: Uint8ClampedArray,
+  mode: CurvePasteSpaceMode
+): RowSignature[] =>
   Array.from({ length: height }, (_, y) => {
-    const samples = selectSparseCurveSamples(rowSamples(width, y, data));
+    const samples = selectSparseCurveSamples(rowSamples(width, y, data, mode));
     const curve = buildCurve(samples);
     const preparedCurve = prepareCurve(curve);
 
@@ -369,9 +398,10 @@ export const selectSparseImageRows = (
 export const spaceLibraryFromImageRows = (
   width: number,
   height: number,
-  data: Uint8ClampedArray
+  data: Uint8ClampedArray,
+  mode: CurvePasteSpaceMode = 'rows'
 ): LibraryCurve[] => (
-  selectSparseImageRows(createRowSignatures(width, height, data)).map((row, index) => {
+  selectSparseImageRows(createRowSignatures(width, height, data, mode)).map((row, index) => {
     return {
       id: `paste_row_${row.y}_${width}x${height}`,
       name: `Image Row ${index + 1}`,
@@ -384,16 +414,17 @@ export const spaceLibraryFromImageRows = (
   })
 );
 
-const curveFromImageRows = (width: number, height: number, data: Uint8ClampedArray) => {
-  const spaceLibrary = spaceLibraryFromImageRows(width, height, data);
+const spaceFromImageRows = (width: number, height: number, data: Uint8ClampedArray, mode: CurvePasteSpaceMode) => {
+  const library = spaceLibraryFromImageRows(width, height, data, mode);
   const previewRow = Math.max(0, Math.floor((height - 1) / 2));
-  const previewSamples = selectSparseCurveSamples(rowSamples(width, previewRow, data));
+  const previewSamples = selectSparseCurveSamples(rowSamples(width, previewRow, data, mode));
 
   return {
-    curve: buildCurve(previewSamples),
-    spaceLibrary,
+    library,
     previewColors: previewSamples.map(sample => toHex(sample.color)),
-    summary: `${spaceLibrary.length} 2D row samples`
+    summary: mode === 'row-sorted-pixels'
+      ? `${library.length} sorted 2D row samples`
+      : `${library.length} 2D row samples`
   };
 };
 
@@ -489,8 +520,6 @@ export async function imageFileToCurve(file: File, mode: CurvePasteImageMode): P
   const { width, height, data } = await readImagePixels(file);
 
   switch (mode) {
-    case 'row-match-2d':
-      return curveFromImageRows(width, height, data);
     case 'sorted-pixels':
       return curveFromSortedPixels(width, height, data);
     case 'top-colors':
@@ -499,4 +528,9 @@ export async function imageFileToCurve(file: File, mode: CurvePasteImageMode): P
     default:
       return curveFromColumns(width, height, data);
   }
+}
+
+export async function imageFileToSpace(file: File, mode: CurvePasteSpaceMode): Promise<CurvePasteSpaceResult> {
+  const { width, height, data } = await readImagePixels(file);
+  return spaceFromImageRows(width, height, data, mode);
 }

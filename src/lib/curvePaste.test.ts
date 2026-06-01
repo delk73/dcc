@@ -31,6 +31,17 @@ assert.equal(twoRows[0].curve.g.at(-1)?.value, 1);
 assert.equal(twoRows[1].curve.b[0].value, 1);
 assert.equal(twoRows[1].curve.r.at(-1)?.value, 1);
 
+const unsortedRowImage = rgba(
+  255, 255, 255, 255,
+  0, 0, 0, 255,
+  128, 128, 128, 255,
+  32, 32, 32, 255
+);
+const naturalRow = spaceLibraryFromImageRows(4, 1, unsortedRowImage, 'rows')[0];
+const sortedRow = spaceLibraryFromImageRows(4, 1, unsortedRowImage, 'row-sorted-pixels')[0];
+assert.equal(naturalRow.curve.r[0].value, 1);
+assert.equal(sortedRow.curve.r[0].value, 0);
+
 const scaledTall = getScaledImageSize(64, 384);
 assert.equal(scaledTall.height, MAX_SOURCE_SIZE);
 assert.equal(scaledTall.width, 32);

@@ -2,7 +2,12 @@ import React, { useMemo, useState } from 'react';
 import { ClipboardPaste, FileInput, ImagePlus, Layers, Upload, X } from 'lucide-react';
 import type { ColorCurve, LibraryCurve } from '../types';
 import { parseCurveImportText } from '../lib/curveImport';
-import { imageFileToCurve, type CurvePasteImageMode } from '../lib/curvePaste';
+import {
+  imageFileToCurve,
+  imageFileToSpace,
+  type CurvePasteImageMode,
+  type CurvePasteSpaceMode
+} from '../lib/curvePaste';
 import { cn } from '../lib/utils';
 
 interface CurvePasteAreaProps {
@@ -11,11 +16,15 @@ interface CurvePasteAreaProps {
   className?: string;
 }
 
-const MODES: Array<{ value: CurvePasteImageMode; label: string; title: string }> = [
-  { value: 'color-curve', label: 'Image CC', title: 'Sample image columns as a color curve' },
-  { value: 'sorted-pixels', label: 'Pixel Sort', title: 'Sort image pixels by luminance and sample them into the curve' },
-  { value: 'top-colors', label: 'Top Colors', title: 'Use the strongest colors and their image ratios' },
-  { value: 'row-match-2d', label: 'Row 2D', title: 'Build a 2D space from every processed image row' }
+const CURVE_MODES: Array<{ value: CurvePasteImageMode; label: string; title: string }> = [
+  { value: 'color-curve', label: 'CC', title: 'Sample image columns as a color curve' },
+  { value: 'sorted-pixels', label: 'Sort', title: 'Sort image pixels by luminance and sample them into the curve' },
+  { value: 'top-colors', label: 'Top', title: 'Use the strongest colors and their image ratios' }
+];
+
+const SPACE_MODES: Array<{ value: CurvePasteSpaceMode; label: string; title: string }> = [
+  { value: 'rows', label: 'Rows', title: 'Build a 2D space from sparse matched image rows' },
+  { value: 'row-sorted-pixels', label: 'Sort', title: 'Build a 2D space with luminance-sorted pixels inside each row' }
 ];
 
 const CHANNEL_COLORS = {
@@ -35,8 +44,10 @@ type CapturedPayload =
 
 export const CurvePasteArea: React.FC<CurvePasteAreaProps> = ({ onImport, onPushSpace, className }) => {
   const [text, setText] = useState('');
-  const [mode, setMode] = useState<CurvePasteImageMode>('color-curve');
+  const [curveMode, setCurveMode] = useState<CurvePasteImageMode>('color-curve');
+  const [spaceMode, setSpaceMode] = useState<CurvePasteSpaceMode>('rows');
   const [imageResult, setImageResult] = useState<Awaited<ReturnType<typeof imageFileToCurve>> | null>(null);
+  const [spaceResult, setSpaceResult] = useState<Awaited<ReturnType<typeof imageFileToSpace>> | null>(null);
   const [capturedPayload, setCapturedPayload] = useState<CapturedPayload>(null);
   const [status, setStatus] = useState('Paste text, drop an image, or paste pixels.');
   const [isDragging, setIsDragging] = useState(false);
@@ -47,9 +58,12 @@ export const CurvePasteArea: React.FC<CurvePasteAreaProps> = ({ onImport, onPush
   const textPointCount = textResult.summary.reduce((total, item) => total + item.count, 0);
   const canImportText = textPointCount > 0;
   const canImportImage = imageResult !== null;
-  const canPushSpace = capturedPayload?.kind === 'image' || (imageResult?.spaceLibrary?.length ?? 0) > 0;
+  const canPushSpace = capturedPayload?.kind === 'image' || (spaceResult?.library.length ?? 0) > 0;
   const hasPayload = capturedPayload !== null || canImportImage || canImportText;
-  const resultLabel = capturedPayload?.kind === 'image'
+  const previewColors = spaceResult?.previewColors ?? imageResult?.previewColors;
+  const resultLabel = spaceResult
+    ? '2D Result'
+    : capturedPayload?.kind === 'image'
     ? 'Image Result'
     : capturedPayload?.kind === 'text'
       ? 'Curve Result'
@@ -59,13 +73,14 @@ export const CurvePasteArea: React.FC<CurvePasteAreaProps> = ({ onImport, onPush
     setAcknowledgedAt(Date.now());
   };
 
-  const readImage = async (file: File, nextMode = mode, acknowledge = true) => {
+  const readImage = async (file: File, nextMode = curveMode, acknowledge = true) => {
     setCapturedPayload({ kind: 'image', file });
     if (acknowledge) acknowledgePaste();
     setStatus('Reading image...');
     try {
       const result = await imageFileToCurve(file, nextMode);
       setImageResult(result);
+      setSpaceResult(null);
       setStatus(result.summary);
     } catch (error) {
       setImageResult(null);
@@ -73,8 +88,16 @@ export const CurvePasteArea: React.FC<CurvePasteAreaProps> = ({ onImport, onPush
     }
   };
 
-  const handleModeChange = async (nextMode: CurvePasteImageMode) => {
-    setMode(nextMode);
+  const readSpace = async (file: File, nextMode = spaceMode) => {
+    setStatus('Building 2D rows...');
+    const result = await imageFileToSpace(file, nextMode);
+    setSpaceResult(result);
+    setStatus(result.summary);
+    return result;
+  };
+
+  const handleCurveModeChange = async (nextMode: CurvePasteImageMode) => {
+    setCurveMode(nextMode);
     if (capturedPayload?.kind === 'image') {
       await readImage(capturedPayload.file, nextMode, false);
       return;
@@ -82,6 +105,24 @@ export const CurvePasteArea: React.FC<CurvePasteAreaProps> = ({ onImport, onPush
     setStatus(capturedPayload?.kind === 'text'
       ? 'Image modes apply to pasted or dropped images.'
       : 'Drop or paste an image for this mode.'
+    );
+  };
+
+  const handleSpaceModeChange = async (nextMode: CurvePasteSpaceMode) => {
+    setSpaceMode(nextMode);
+    setSpaceResult(null);
+    if (capturedPayload?.kind === 'image') {
+      try {
+        await readSpace(capturedPayload.file, nextMode);
+      } catch (error) {
+        setSpaceResult(null);
+        setStatus(error instanceof Error ? error.message : 'Could not build 2D rows.');
+      }
+      return;
+    }
+    setStatus(capturedPayload?.kind === 'text'
+      ? '2D modes apply to pasted or dropped images.'
+      : 'Drop or paste an image for this 2D mode.'
     );
   };
 
@@ -100,6 +141,7 @@ export const CurvePasteArea: React.FC<CurvePasteAreaProps> = ({ onImport, onPush
       event.preventDefault();
       setText(pastedText);
       setImageResult(null);
+      setSpaceResult(null);
       setCapturedPayload({ kind: 'text', text: pastedText });
       const pastedResult = parseCurveImportText(pastedText);
       const pointCount = pastedResult.summary.reduce((total, item) => total + item.count, 0);
@@ -118,29 +160,21 @@ export const CurvePasteArea: React.FC<CurvePasteAreaProps> = ({ onImport, onPush
   const handlePushSpace = async () => {
     if (isPushingSpace) return;
 
-    const stagedLibrary = imageResult?.spaceLibrary;
-    if (stagedLibrary) {
-      onPushSpace(stagedLibrary);
-      setStatus(`${stagedLibrary.length} space rows pushed.`);
+    if (spaceResult) {
+      onPushSpace(spaceResult.library);
+      setStatus(`${spaceResult.library.length} space rows pushed.`);
       return;
     }
 
     if (capturedPayload?.kind !== 'image') return;
 
     setIsPushingSpace(true);
-    setMode('row-match-2d');
-    setStatus('Building 2D rows...');
     try {
-      const result = await imageFileToCurve(capturedPayload.file, 'row-match-2d');
-      setImageResult(result);
-      if (result.spaceLibrary) {
-        onPushSpace(result.spaceLibrary);
-        setStatus(`${result.spaceLibrary.length} space rows pushed.`);
-      } else {
-        setStatus('No 2D rows found.');
-      }
+      const result = await readSpace(capturedPayload.file, spaceMode);
+      onPushSpace(result.library);
+      setStatus(`${result.library.length} space rows pushed.`);
     } catch (error) {
-      setImageResult(null);
+      setSpaceResult(null);
       setStatus(error instanceof Error ? error.message : 'Could not build 2D rows.');
     } finally {
       setIsPushingSpace(false);
@@ -148,11 +182,6 @@ export const CurvePasteArea: React.FC<CurvePasteAreaProps> = ({ onImport, onPush
   };
 
   const handleApply = () => {
-    if (mode === 'row-match-2d' || imageResult?.spaceLibrary) {
-      void handlePushSpace();
-      return;
-    }
-
     onImport(imageResult?.curve ?? textResult.curve);
   };
 
@@ -176,16 +205,35 @@ export const CurvePasteArea: React.FC<CurvePasteAreaProps> = ({ onImport, onPush
           <h3 className="truncate text-[10px] font-bold uppercase tracking-wider text-zinc-400">Paste Area</h3>
         </div>
 
-        <div className="flex items-center gap-1">
-          <div className="flex rounded-md border border-zinc-800 bg-black p-0.5" aria-label="Image interpretation mode">
-            {MODES.map(option => (
+        <div className="flex flex-wrap items-center justify-end gap-1">
+          <div className="flex items-center rounded-md border border-zinc-800 bg-black p-0.5" aria-label="1D image curve mode">
+            <span className="px-1.5 text-[9px] font-mono text-zinc-600">1D</span>
+            {CURVE_MODES.map(option => (
               <button
                 key={option.value}
                 type="button"
-                onClick={() => void handleModeChange(option.value)}
+                onClick={() => void handleCurveModeChange(option.value)}
                 className={cn(
-                  "h-6 min-w-14 rounded px-2 text-[10px] font-medium text-zinc-500 hover:text-zinc-200",
-                  mode === option.value && "bg-zinc-800 text-zinc-100"
+                  "h-6 min-w-9 rounded px-2 text-[10px] font-medium text-zinc-500 hover:text-zinc-200",
+                  curveMode === option.value && "bg-zinc-800 text-zinc-100"
+                )}
+                title={option.title}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center rounded-md border border-sky-950 bg-black p-0.5" aria-label="2D image space mode">
+            <span className="px-1.5 text-[9px] font-mono text-sky-700">2D</span>
+            {SPACE_MODES.map(option => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => void handleSpaceModeChange(option.value)}
+                className={cn(
+                  "h-6 min-w-10 rounded px-2 text-[10px] font-medium text-zinc-500 hover:text-sky-100",
+                  spaceMode === option.value && "bg-sky-950 text-sky-100"
                 )}
                 title={option.title}
               >
@@ -217,6 +265,7 @@ export const CurvePasteArea: React.FC<CurvePasteAreaProps> = ({ onImport, onPush
             onClick={() => {
               setText('');
               setImageResult(null);
+              setSpaceResult(null);
               setCapturedPayload(null);
               setStatus('Paste text, drop an image, or paste pixels.');
             }}
@@ -232,8 +281,8 @@ export const CurvePasteArea: React.FC<CurvePasteAreaProps> = ({ onImport, onPush
             onClick={() => void handlePushSpace()}
             disabled={!canPushSpace || isPushingSpace}
             className="flex h-7 items-center gap-1 rounded-md border border-sky-800 bg-sky-950/50 px-2 text-[10px] font-medium text-sky-200 hover:bg-sky-900/60 disabled:pointer-events-none disabled:opacity-35"
-            title="Push row-matched image into the 2D space"
-            aria-label="Push row-matched image into the 2D space"
+            title="Push image into the 2D space"
+            aria-label="Push image into the 2D space"
           >
             <Layers className="h-3.5 w-3.5" />
             {isPushingSpace ? '...' : '2D'}
@@ -242,10 +291,10 @@ export const CurvePasteArea: React.FC<CurvePasteAreaProps> = ({ onImport, onPush
           <button
             type="button"
             onClick={handleApply}
-            disabled={mode === 'row-match-2d' ? !canPushSpace || isPushingSpace : !canImportImage && !canImportText}
+            disabled={!canImportImage && !canImportText}
             className="grid h-7 w-7 place-items-center rounded-md border border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700 disabled:pointer-events-none disabled:opacity-35"
-            title={mode === 'row-match-2d' ? 'Apply row-matched image to 2D space' : 'Apply paste area curve'}
-            aria-label={mode === 'row-match-2d' ? 'Apply row-matched image to 2D space' : 'Apply paste area curve'}
+            title="Apply paste area curve"
+            aria-label="Apply paste area curve"
           >
             <Upload className="h-3.5 w-3.5" />
           </button>
@@ -271,7 +320,7 @@ export const CurvePasteArea: React.FC<CurvePasteAreaProps> = ({ onImport, onPush
             </div>
             <div className="truncate text-[10px] leading-4 text-zinc-500">
               {capturedPayload?.kind === 'image'
-                ? `Image ${mode === 'color-curve' ? 'sampled' : mode === 'sorted-pixels' ? 'sorted' : mode === 'row-match-2d' ? 'row matched' : 'analyzed'}`
+                ? `1D ${curveMode === 'color-curve' ? 'sampled' : curveMode === 'sorted-pixels' ? 'sorted' : 'analyzed'} / 2D ${spaceMode === 'rows' ? 'rows' : 'row sorted'}`
                 : capturedPayload?.kind === 'text' && canImportText
                   ? `${textPointCount} curve points parsed`
                   : 'Images, UE copy buffers, or loose point pairs'}
@@ -286,7 +335,7 @@ export const CurvePasteArea: React.FC<CurvePasteAreaProps> = ({ onImport, onPush
               {resultLabel}
             </div>
             <div className="grid h-6 grid-cols-4">
-              {imageResult?.previewColors.slice(0, 4).map((color, index) => (
+              {previewColors?.slice(0, 4).map((color, index) => (
                 <div key={`${color}-${index}`} style={{ backgroundColor: color }} />
               )) ?? (
                 <div className="col-span-4 grid place-items-center text-[9px] text-zinc-700">
@@ -314,7 +363,7 @@ export const CurvePasteArea: React.FC<CurvePasteAreaProps> = ({ onImport, onPush
       </div>
 
       <div className="mt-1 truncate text-[10px] leading-4 text-zinc-500">
-        {imageResult ? `Image: ${status}` : textResult.warnings[0] || status}
+        {imageResult || spaceResult ? `Image: ${status}` : textResult.warnings[0] || status}
       </div>
 
       <style>{`
