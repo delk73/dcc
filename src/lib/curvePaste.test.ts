@@ -96,6 +96,7 @@ const mixedRowShapeRows = spaceLibraryFromImageRows(5, 3, mixedRowShapeData);
 assert.equal(mixedRowShapeRows.length, 3);
 assert.equal(mixedRowShapeRows[0].curve.r.length, 2);
 assert.equal(mixedRowShapeRows[1].curve.r.length > 2, true);
+assert.equal(mixedRowShapeRows[1].curve.a.length, 2);
 assert.equal(mixedRowShapeRows[2].curve.r.length, 2);
 
 const flatSamples = [

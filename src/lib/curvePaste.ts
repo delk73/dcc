@@ -103,12 +103,61 @@ const createImportedPoint = (
       : undefined
 });
 
+const selectSparseChannelSamples = (
+  samples: Array<{ time: number; color: Rgba }>,
+  channel: Channel,
+  errorThreshold = CURVE_SAMPLE_ERROR_THRESHOLD
+) => {
+  if (samples.length <= 2) return samples;
+
+  const selected = new Set([0, samples.length - 1]);
+  const segments = [{ startIndex: 0, endIndex: samples.length - 1 }];
+
+  while (segments.length > 0) {
+    let bestSegmentIndex = -1;
+    let bestSampleIndex = -1;
+    let bestError = 0;
+
+    segments.forEach((segment, segmentIndex) => {
+      const start = samples[segment.startIndex];
+      const end = samples[segment.endIndex];
+
+      for (let index = segment.startIndex + 1; index < segment.endIndex; index += 1) {
+        const expected = lerpSampleColor(start, end, samples[index].time);
+        const error = Math.abs(expected[channel] - samples[index].color[channel]);
+        if (error > bestError) {
+          bestError = error;
+          bestSampleIndex = index;
+          bestSegmentIndex = segmentIndex;
+        }
+      }
+    });
+
+    if (bestSegmentIndex === -1 || bestSampleIndex === -1 || bestError <= errorThreshold) break;
+
+    const [segment] = segments.splice(bestSegmentIndex, 1);
+    selected.add(bestSampleIndex);
+
+    if (bestSampleIndex - segment.startIndex > 1) {
+      segments.push({ startIndex: segment.startIndex, endIndex: bestSampleIndex });
+    }
+    if (segment.endIndex - bestSampleIndex > 1) {
+      segments.push({ startIndex: bestSampleIndex, endIndex: segment.endIndex });
+    }
+  }
+
+  return [...selected]
+    .sort((a, b) => a - b)
+    .map(index => samples[index]);
+};
+
 const buildCurve = (samples: Array<{ time: number; color: Rgba }>): ColorCurve => {
   const ordered = [...samples].sort((a, b) => a.time - b.time);
 
   return CHANNELS.reduce((curve, channel) => {
-    const points = ordered.map((sample, index) => (
-      createImportedPoint(channel, index, sample.time, sample.color[channel], ordered.length)
+    const channelSamples = selectSparseChannelSamples(ordered, channel);
+    const points = channelSamples.map((sample, index) => (
+      createImportedPoint(channel, index, sample.time, sample.color[channel], channelSamples.length)
     ));
 
     return {
