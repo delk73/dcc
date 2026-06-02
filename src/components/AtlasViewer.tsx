@@ -230,7 +230,7 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
 
               <div 
                 ref={atlasFrameRef}
-                className={`flex-1 relative min-h-[200px] rounded-lg overflow-hidden border border-zinc-800 shadow-inner touch-none ${canvasClassName || 'aspect-[2/1]'}`}
+                className={`flex-1 relative min-h-[200px] rounded-lg overflow-visible border border-zinc-800 shadow-inner touch-none ${canvasClassName || 'aspect-[2/1]'}`}
                 role={onSpaceLeverChange || onDomainTimeChange ? 'slider' : undefined}
                 aria-label={onSpaceLeverChange || onDomainTimeChange ? '2D atlas XY selector' : undefined}
                 aria-valuemin={onSpaceLeverChange || onDomainTimeChange ? 0 : undefined}
@@ -260,24 +260,28 @@ export const AtlasViewer: React.FC<AtlasViewerProps> = ({
                     onDomainTimeChange?.(Math.max(0, domainTime - 0.01), { commit: true });
                   }
                 }}
-            style={{
-              backgroundColor: '#09090b',
-              backgroundImage: `
-                linear-gradient(45deg, #18181b 25%, transparent 25%), 
-                linear-gradient(-45deg, #18181b 25%, transparent 25%), 
-                linear-gradient(45deg, transparent 75%, #18181b 75%), 
-                linear-gradient(-45deg, transparent 75%, #18181b 75%)`,
-              backgroundSize: '20px 20px',
-              backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px'
-            }}
           >
-            <canvas 
-              ref={canvasRef} 
-              width={256} 
-              height={256} 
-              className="w-full h-full object-fill style-crisp-edges"
-              style={{ imageRendering: 'pixelated' }}
-            />
+            <div
+              className="pointer-events-none absolute inset-0 overflow-hidden rounded-lg"
+              style={{
+                backgroundColor: '#09090b',
+                backgroundImage: `
+                  linear-gradient(45deg, #18181b 25%, transparent 25%),
+                  linear-gradient(-45deg, #18181b 25%, transparent 25%),
+                  linear-gradient(45deg, transparent 75%, #18181b 75%),
+                  linear-gradient(-45deg, transparent 75%, #18181b 75%)`,
+                backgroundSize: '20px 20px',
+                backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px'
+              }}
+            >
+              <canvas
+                ref={canvasRef}
+                width={256}
+                height={256}
+                className="w-full h-full object-fill style-crisp-edges"
+                style={{ imageRendering: 'pixelated' }}
+              />
+            </div>
             <div
               className="absolute left-0 right-0 h-px bg-white/80 shadow-[0_0_6px_rgba(255,255,255,0.65)] pointer-events-none"
               style={{ top: `${(1 - spaceLever) * 100}%` }}
