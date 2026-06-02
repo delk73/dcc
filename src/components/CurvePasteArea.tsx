@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ClipboardPaste, FileInput, ImagePlus, Layers, Upload, X } from 'lucide-react';
+import { ClipboardPaste, FileInput, ImagePlus, Layers, Spline, X } from 'lucide-react';
 import type { ColorCurve, LibraryCurve } from '../types';
 import { parseCurveImportText } from '../lib/curveImport';
 import {
@@ -26,13 +26,6 @@ const SPACE_MODES: Array<{ value: CurvePasteSpaceMode; label: string; title: str
   { value: 'rows', label: 'Rows', title: 'Build a 2D space from sparse matched image rows' },
   { value: 'row-sorted-pixels', label: 'Sort', title: 'Build a 2D space with luminance-sorted pixels inside each row' }
 ];
-
-const CHANNEL_COLORS = {
-  r: 'bg-red-500',
-  g: 'bg-green-500',
-  b: 'bg-blue-500',
-  a: 'bg-stone-400'
-};
 
 const firstImageFile = (files: FileList | File[]) =>
   [...files].find(file => file.type.startsWith('image/')) ?? null;
@@ -292,16 +285,17 @@ export const CurvePasteArea: React.FC<CurvePasteAreaProps> = ({ onImport, onPush
             type="button"
             onClick={handleApply}
             disabled={!canImportImage && !canImportText}
-            className="grid h-7 w-7 place-items-center rounded-md border border-zinc-700 bg-zinc-800 text-zinc-200 hover:bg-zinc-700 disabled:pointer-events-none disabled:opacity-35"
+            className="flex h-7 items-center gap-1 rounded-md border border-zinc-700 bg-zinc-800 px-2 text-[10px] font-medium text-zinc-200 hover:bg-zinc-700 disabled:pointer-events-none disabled:opacity-35"
             title="Apply paste area curve"
             aria-label="Apply paste area curve"
           >
-            <Upload className="h-3.5 w-3.5" />
+            <Spline className="h-3.5 w-3.5" />
+            1D
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(220px,34%)] gap-2">
         <div
           key={acknowledgedAt}
           className={cn(
@@ -329,35 +323,27 @@ export const CurvePasteArea: React.FC<CurvePasteAreaProps> = ({ onImport, onPush
           <div className="pointer-events-none absolute inset-0 opacity-0" />
         </div>
 
-        <div className="flex w-32 flex-col gap-1.5">
-          <div className="overflow-hidden rounded-md border border-zinc-800 bg-black">
+        <div className="min-w-0">
+          <div className="h-full overflow-hidden rounded-md border border-zinc-800 bg-black">
             <div className="border-b border-zinc-800 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-zinc-600">
               {resultLabel}
             </div>
-            <div className="grid h-6 grid-cols-4">
-              {previewColors?.slice(0, 4).map((color, index) => (
-                <div key={`${color}-${index}`} style={{ backgroundColor: color }} />
+            <div
+              className="grid h-[42px]"
+              style={{
+                gridTemplateColumns: previewColors?.length
+                  ? `repeat(${previewColors.length}, minmax(2px, 1fr))`
+                  : undefined
+              }}
+            >
+              {previewColors?.map((color, index) => (
+                <div key={`${color}-${index}`} className="min-w-0" style={{ backgroundColor: color }} />
               )) ?? (
                 <div className="col-span-4 grid place-items-center text-[9px] text-zinc-700">
                   {capturedPayload?.kind === 'text' ? `${textPointCount} pts` : 'empty'}
                 </div>
               )}
             </div>
-          </div>
-
-          <div className="flex flex-wrap gap-1">
-            {textResult.summary.map(item => (
-              <span
-                key={item.channel}
-                className={cn(
-                  "flex h-5 min-w-8 items-center justify-center gap-1 rounded border border-zinc-800 bg-black/50 px-1 font-mono text-[9px] text-zinc-400",
-                  item.count === 0 && "text-zinc-700"
-                )}
-              >
-                <span className={cn("h-1.5 w-1.5 rounded-full", CHANNEL_COLORS[item.channel])} />
-                {item.channel.toUpperCase()}{item.count}
-              </span>
-            ))}
           </div>
         </div>
       </div>
