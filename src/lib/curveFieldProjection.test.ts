@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { compileCurveFieldBasis } from './curveFieldBasisCompile';
 import { compileCurveFieldProjection } from './curveFieldProjectionCompile';
 import { evaluateCompiledCurveFieldProjection, worldToCurveFieldLocal } from './curveFieldProjectionEval';
 import { compileCurveParameterBindings } from './curveParameterBindingCompile';
@@ -172,6 +173,24 @@ assert.notEqual(
       : binding),
   }),
   'basis hash changes when binding parameter changes'
+);
+
+assert.throws(
+  () => compileCurveFieldBasis({
+    ...SEPARABLE_RADIAL_BASIS,
+    bindings: SEPARABLE_RADIAL_BASIS.bindings.filter(binding => binding.parameter !== 'major.response'),
+  }),
+  /Missing curve parameter binding: major\.response/,
+  'separable-radial compile fails loudly when a required binding is missing'
+);
+
+assert.throws(
+  () => compileCurveFieldBasis({
+    ...SHAPE_LERP_CIRCLE_TRIANGLE_BASIS,
+    bindings: SHAPE_LERP_CIRCLE_TRIANGLE_BASIS.bindings.filter(binding => binding.parameter !== 'triangle.response'),
+  }),
+  /Missing curve parameter binding: triangle\.response/,
+  'shape-lerp compile fails loudly when a required binding is missing'
 );
 
 assert.equal(
