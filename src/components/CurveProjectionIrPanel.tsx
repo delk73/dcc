@@ -7,6 +7,7 @@ import {
   hashCurveFieldProjectionIr,
   hashCurveSpaceIr,
 } from '../lib/curveSpaceHash';
+import { hashCurveFieldBasisIr } from '../lib/curveFieldBasisHash';
 
 type CurveProjectionIrPanelProps = {
   curveSpace: CurveSpaceIr;
@@ -17,6 +18,7 @@ type CurveProjectionIrPanelProps = {
 export function CurveProjectionIrPanel({ curveSpace, projection, className }: CurveProjectionIrPanelProps) {
   const [expanded, setExpanded] = useState(false);
   const curveSpaceHash = useMemo(() => hashCurveSpaceIr(curveSpace), [curveSpace]);
+  const basisHash = useMemo(() => hashCurveFieldBasisIr(projection.basis), [projection.basis]);
   const projectionHash = useMemo(() => hashCurveFieldProjectionIr(projection), [projection]);
   const canonicalHash = useMemo(
     () => hashCurveFieldProjectionCanonical(curveSpace, projection),
@@ -28,10 +30,10 @@ export function CurveProjectionIrPanel({ curveSpace, projection, className }: Cu
       kind: curveSpace.kind,
       domain: curveSpace.domain,
       channels: {
-        r: { role: projection.basis.r, points: curveSpace.channels.r.length },
-        g: { role: projection.basis.g, points: curveSpace.channels.g.length },
-        b: { role: projection.basis.b, points: curveSpace.channels.b.length },
-        a: { role: projection.basis.a, points: curveSpace.channels.a.length },
+        r: { points: curveSpace.channels.r.length },
+        g: { points: curveSpace.channels.g.length },
+        b: { points: curveSpace.channels.b.length },
+        a: { points: curveSpace.channels.a.length },
       },
       hash: curveSpaceHash,
     },
@@ -39,16 +41,18 @@ export function CurveProjectionIrPanel({ curveSpace, projection, className }: Cu
       version: projection.version,
       kind: projection.kind,
       transform: projection.transform,
-      compose: projection.compose,
+      basisKind: projection.basis.kind,
+      basisHash,
       hash: projectionHash,
     },
     canonicalHash,
-  }, null, 2), [curveSpace, projection, curveSpaceHash, projectionHash, canonicalHash]);
+  }, null, 2), [curveSpace, projection, curveSpaceHash, basisHash, projectionHash, canonicalHash]);
 
   return (
     <div className={cn('rounded border border-zinc-800 bg-zinc-950', className)}>
       <button type="button" onClick={() => setExpanded(value => !value)} className="flex w-full items-center gap-2 px-2 py-1 text-left">
         <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">IR / Hash</span>
+        <span className="font-mono text-[10px] text-zinc-600">{projection.basis.kind}</span>
         <span className="ml-auto font-mono text-[10px] text-zinc-500">{canonicalHash}</span>
         <span className="font-mono text-[10px] text-zinc-600">{expanded ? '-' : '+'}</span>
       </button>

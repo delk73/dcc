@@ -1,4 +1,5 @@
 import type { CurveSpaceIr } from './curveSpaceIr';
+import { SEPARABLE_RADIAL_BASIS, type CurveFieldBasisIr } from './curveFieldBasisIr';
 
 export type CurveFieldProjectionIr = {
   version: 1;
@@ -10,17 +11,7 @@ export type CurveFieldProjectionIr = {
     scaleX: number;
     scaleY: number;
   };
-  basis: {
-    r: 'major-axis';
-    g: 'orthogonal-axis';
-    b: 'radial-interaction';
-    a: 'final-transfer';
-  };
-  compose: {
-    mode: 'min';
-    bInput: 'radial';
-    transfer: 'a-curve';
-  };
+  basis: CurveFieldBasisIr;
 };
 
 export type CurveFieldPreviewSpec = {
@@ -42,15 +33,5 @@ export const DEFAULT_CURVE_FIELD_PROJECTION: CurveFieldProjectionIr = {
     scaleX: 1,
     scaleY: 1,
   },
-  basis: {
-    r: 'major-axis',
-    g: 'orthogonal-axis',
-    b: 'radial-interaction',
-    a: 'final-transfer',
-  },
-  compose: {
-    mode: 'min',
-    bInput: 'radial',
-    transfer: 'a-curve',
-  },
+  basis: SEPARABLE_RADIAL_BASIS,
 };

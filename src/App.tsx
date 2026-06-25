@@ -12,7 +12,7 @@ import { Download, RotateCcw, Settings2 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { InterpMode, computeTangents, evaluateCurve, blendSpaceCurves } from './lib/curveUtils';
 import { colorCurveToCurveSpaceIr } from './lib/curveSpaceIr';
-import { DEFAULT_CURVE_FIELD_PROJECTION, type CurveFieldProjectionIr, type CurveFieldPreviewSpec } from './lib/curveProjectionIr';
+import { type CurveFieldPreviewSpec } from './lib/curveProjectionIr';
 import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
 import {
   POSITION_EPSILON,
@@ -110,7 +110,7 @@ export default function App() {
     interaction
   } = ui;
   const spaceLever = levers[TWO_DIMENSIONAL_WORKSPACE_VIEW];
-  const { outputMode, curveFieldCurve, curveFieldTransform, curveFieldPreviewSize } = projectionState;
+  const { outputMode, curveFieldCurve, curveFieldProjection, curveFieldPreviewSize } = projectionState;
 
   const setRawSpacePosition = (val: number) => {
       dispatch({ type: 'set-space-position', mainView: TWO_DIMENSIONAL_WORKSPACE_VIEW, position: val });
@@ -288,11 +288,6 @@ export default function App() {
     () => colorCurveToCurveSpaceIr(curveFieldCurve),
     [curveFieldCurve]
   );
-
-  const curveFieldProjection = useMemo<CurveFieldProjectionIr>(() => ({
-    ...DEFAULT_CURVE_FIELD_PROJECTION,
-    transform: curveFieldTransform,
-  }), [curveFieldTransform]);
 
   const curveFieldPreviewSpec = useMemo<CurveFieldPreviewSpec>(() => ({
     curveSpace: curveFieldCurveSpace,
@@ -478,9 +473,12 @@ export default function App() {
         <CurveFieldProjectionViewer spec={curveFieldPreviewSpec} />
       </div>
       <CurveFieldProjectionControls
-        transform={curveFieldTransform}
+        transform={curveFieldProjection.transform}
+        basis={curveFieldProjection.basis}
         previewSize={curveFieldPreviewSize}
         onTransformChange={transform => dispatchProjection({ type: 'set-curve-field-transform', transform })}
+        onBasisKindChange={kind => dispatchProjection({ type: 'set-curve-field-basis-kind', kind })}
+        onShapeLerpParamsChange={params => dispatchProjection({ type: 'set-shape-lerp-params', params })}
         onPreviewSizeChange={size => dispatchProjection({ type: 'set-curve-field-preview-size', size })}
       />
       <CurveProjectionIrPanel curveSpace={curveFieldCurveSpace} projection={curveFieldProjection} />

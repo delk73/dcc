@@ -1,5 +1,6 @@
 import { computeTangents, evaluateCurve } from './curveUtils';
 import type { CurveFieldPreviewSpec } from './curveProjectionIr';
+import { compileCurveFieldBasis, type CompiledCurveFieldBasis } from './curveFieldBasisCompile';
 import { clampHdr } from './curveSpaceIr';
 import type { CurveChannelId } from './curveSpaceIr';
 import type { CurvePoint } from '../types';
@@ -21,12 +22,8 @@ export type CompiledCurveFieldProjection = {
   };
   channels: Record<CurveChannelId, Float32Array>;
   lutSize: number;
-  compose: {
-    mode: 'min';
-    bInput: 'radial';
-    transfer: 'a-curve';
-    valueMeaning: 'hdr-offset-signed';
-  };
+  basis: CompiledCurveFieldBasis;
+  valueMeaning: 'hdr-offset-signed';
 };
 
 function compileChannel(points: CurvePoint[], lutSize: number): Float32Array {
@@ -66,9 +63,7 @@ export function compileCurveFieldProjection(
     },
     channels,
     lutSize,
-    compose: {
-      ...spec.projection.compose,
-      valueMeaning: spec.curveSpace.domain.valueMeaning,
-    },
+    basis: compileCurveFieldBasis(spec.projection.basis),
+    valueMeaning: spec.curveSpace.domain.valueMeaning,
   };
 }
