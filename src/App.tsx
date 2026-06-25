@@ -4,9 +4,15 @@ import { ColorCurve, Channel, LibraryCurve } from './types';
 import { CurveEditor } from './components/CurveEditor';
 import { CurvePasteArea } from './components/CurvePasteArea';
 import { AtlasViewer } from './components/AtlasViewer';
+import { OutputModeTabs } from './components/OutputModeTabs';
+import { CurveFieldProjectionControls } from './components/CurveFieldProjectionControls';
+import { CurveFieldProjectionViewer } from './components/CurveFieldProjectionViewer';
+import { CurveProjectionIrPanel } from './components/CurveProjectionIrPanel';
 import { Download, RotateCcw, Settings2 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { InterpMode, computeTangents, evaluateCurve, blendSpaceCurves } from './lib/curveUtils';
+import { colorCurveToCurveSpaceIr } from './lib/curveSpaceIr';
+import { DEFAULT_CURVE_FIELD_PROJECTION, type CurveFieldProjectionIr, type CurveFieldPreviewSpec } from './lib/curveProjectionIr';
 import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
 import {
   POSITION_EPSILON,
@@ -28,6 +34,10 @@ import {
   normalizePersistedUxState,
   serializeUxState,
 } from './state/editorState';
+import {
+  createInitialCurveProjectionState,
+  curveProjectionReducer,
+} from './state/curveProjectionState';
 
 const EXPORT_ATLAS_SIZE = { width: 256, height: 32 };
 const DOMAIN_TIME_DETENT_RADIUS = 0.015;
@@ -78,6 +88,11 @@ export default function App() {
   const { width, height } = useWindowDimensions();
   const layout = useWorkspaceLayout(width, height);
   const [editorState, dispatch] = useReducer(editorReducer, undefined, createInitialEditorState);
+  const [projectionState, dispatchProjection] = useReducer(
+    curveProjectionReducer,
+    undefined,
+    createInitialCurveProjectionState
+  );
   const anchorsRef = useRef<LibraryCurve[]>([]);
   
   const [atlasTexture, setAtlasTexture] = useState<ImageData | null>(null);
@@ -95,6 +110,7 @@ export default function App() {
     interaction
   } = ui;
   const spaceLever = levers[TWO_DIMENSIONAL_WORKSPACE_VIEW];
+  const { outputMode, curveFieldCurve, curveFieldTransform, curveFieldPreviewSize } = projectionState;
 
   const setRawSpacePosition = (val: number) => {
       dispatch({ type: 'set-space-position', mainView: TWO_DIMENSIONAL_WORKSPACE_VIEW, position: val });
@@ -246,6 +262,15 @@ export default function App() {
     dispatch({ type: 'edit-active-curve', curve: newCurve, newAnchorId: createId('anchor') });
   };
 
+  const updateEditorCurve = (newCurve: ColorCurve) => {
+    if (outputMode === 'curve-field') {
+      dispatchProjection({ type: 'set-curve-field-curve', curve: newCurve });
+      return;
+    }
+
+    updateActiveCurve(newCurve);
+  };
+
   const importCurve = (importedCurve: ColorCurve) => {
     const channels: Channel[] = ['r', 'g', 'b', 'a'];
     const mergedCurve = channels.reduce((nextCurve, channel) => ({
@@ -258,6 +283,25 @@ export default function App() {
     dispatch({ type: 'clear-point-selection' });
     updateActiveCurve(mergedCurve);
   };
+
+  const curveFieldCurveSpace = useMemo(
+    () => colorCurveToCurveSpaceIr(curveFieldCurve),
+    [curveFieldCurve]
+  );
+
+  const curveFieldProjection = useMemo<CurveFieldProjectionIr>(() => ({
+    ...DEFAULT_CURVE_FIELD_PROJECTION,
+    transform: curveFieldTransform,
+  }), [curveFieldTransform]);
+
+  const curveFieldPreviewSpec = useMemo<CurveFieldPreviewSpec>(() => ({
+    curveSpace: curveFieldCurveSpace,
+    projection: curveFieldProjection,
+    output: {
+      width: curveFieldPreviewSize,
+      height: curveFieldPreviewSize,
+    },
+  }), [curveFieldCurveSpace, curveFieldProjection, curveFieldPreviewSize]);
 
   const pushSpace = (importedLibrary: LibraryCurve[]) => {
     dispatch({ type: 'reset-space', library: importedLibrary });
@@ -351,17 +395,27 @@ export default function App() {
 
   const renderCurveEditorPanel = (className = '', editorClassName = '') => {
     const pasteAreaHeight = layout.curveEditor.height >= 520 ? 156 : 132;
-    const editorHeight = Math.max(240, layout.curveEditor.height - pasteAreaHeight - 88);
+    const showPasteArea = outputMode === 'atlas';
+    const editorHeight = Math.max(240, layout.curveEditor.height - (showPasteArea ? pasteAreaHeight : 0) - 88);
+    const editorCurve = outputMode === 'curve-field' ? curveFieldCurve : activeSpaceCurve;
+    const curveIndexTitle = outputMode === 'curve-field'
+      ? 'R Major / G Orth / B Interact / A Transfer'
+      : activeCurveIndexInfo?.title;
 
     return (
     <div className={cn("bg-[#09090b] border border-zinc-800 rounded-xl p-2 gap-2 min-h-0 flex flex-col", className)}>
-       <div className="shrink-0 flex items-center">
+       <div className="shrink-0 flex items-center gap-2">
           <h3 className="text-[10px] uppercase tracking-widest font-bold text-zinc-300 mr-1">Curve Editor</h3>
+          {outputMode === 'curve-field' && (
+            <span className="text-[10px] font-mono text-zinc-500" title="R Major, G Orthogonal, B Interaction, A Transfer">
+              R Major&nbsp;&nbsp;G Orth&nbsp;&nbsp;B Interact&nbsp;&nbsp;A Transfer
+            </span>
+          )}
        </div>
 
        <CurveEditor
-          curve={activeSpaceCurve}
-          onChange={updateActiveCurve}
+          curve={editorCurve}
+          onChange={updateEditorCurve}
           editChannels={editChannels}
           selectedPoint={selectedPoint}
           onActiveChannelChange={(channel) => dispatch({ type: 'set-active-channel', channel })}
@@ -373,17 +427,19 @@ export default function App() {
           spaceLever={spaceLever}
           domainTime={atlasDomainTime}
           onDomainTimeChange={setAtlasDomainTimeWithDetent}
-          curveIndexLabel={activeCurveIndexInfo?.label}
-          curveIndexTitle={activeCurveIndexInfo?.title}
+           curveIndexLabel={outputMode === 'curve-field' ? 'CF' : activeCurveIndexInfo?.label}
+           curveIndexTitle={curveIndexTitle}
           width={Math.max(0, layout.curveEditor.width - 16)}
           height={editorHeight}
           className={editorClassName}
        />
-       <CurvePasteArea
-          onImport={importCurve}
-          onPushSpace={pushSpace}
-          className={cn(layout.curveEditor.height < 520 && "hidden sm:block")}
-       />
+         {showPasteArea && (
+          <CurvePasteArea
+            onImport={importCurve}
+            onPushSpace={pushSpace}
+            className={cn(layout.curveEditor.height < 520 && "hidden sm:block")}
+          />
+         )}
     </div>
     );
   };
@@ -413,6 +469,24 @@ export default function App() {
     />
   );
 
+  const renderCurveFieldPanel = (className = '') => (
+    <div className={cn('flex h-full min-h-0 flex-col gap-2 rounded-none border border-zinc-800 bg-[#09090b] p-2', className)}>
+      <div className="shrink-0">
+        <h3 className="text-[10px] font-bold uppercase tracking-widest text-zinc-300">Field Preview</h3>
+      </div>
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded bg-zinc-950">
+        <CurveFieldProjectionViewer spec={curveFieldPreviewSpec} />
+      </div>
+      <CurveFieldProjectionControls
+        transform={curveFieldTransform}
+        previewSize={curveFieldPreviewSize}
+        onTransformChange={transform => dispatchProjection({ type: 'set-curve-field-transform', transform })}
+        onPreviewSizeChange={size => dispatchProjection({ type: 'set-curve-field-preview-size', size })}
+      />
+      <CurveProjectionIrPanel curveSpace={curveFieldCurveSpace} projection={curveFieldProjection} />
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 overflow-hidden select-none bg-black text-zinc-100 font-sans selection:bg-indigo-500/30">
       <header
@@ -427,8 +501,9 @@ export default function App() {
         className="z-50 flex items-center gap-3 border-b border-white/10 bg-[#09090b]/95 px-3"
       >
         <h1 className="mr-1 shrink-0 text-sm font-bold tracking-tight text-white">Curve Composer</h1>
+        <OutputModeTabs mode={outputMode} onChange={mode => dispatchProjection({ type: 'set-output-mode', mode })} />
         <span className="hidden text-[10px] font-mono uppercase tracking-wider text-zinc-600 sm:inline">
-          2D Atlas + 1D Curve / {layout.isWidescreen ? 'Wide' : 'Portrait'}
+          {outputMode === 'atlas' ? '2D Atlas + 1D Curve' : 'Curve Field'} / {layout.isWidescreen ? 'Wide' : 'Portrait'}
         </span>
 
         <div className="ml-auto flex items-center gap-2">
@@ -486,7 +561,7 @@ export default function App() {
         }}
         className="overflow-hidden bg-black p-2"
       >
-        {renderAtlasPanel()}
+        {outputMode === 'atlas' ? renderAtlasPanel() : renderCurveFieldPanel()}
       </section>
 
     </div>
