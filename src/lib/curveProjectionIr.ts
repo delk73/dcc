@@ -15,6 +15,8 @@ export type CurveFieldProjectionIr = {
 };
 
 export type CurveFieldPreviewSpec = {
+  version: 1;
+  kind: 'curve-field-preview-spec';
   curveSpace: CurveSpaceIr;
   projection: CurveFieldProjectionIr;
   output: {

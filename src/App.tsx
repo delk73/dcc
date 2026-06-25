@@ -291,6 +291,8 @@ export default function App() {
   );
 
   const curveFieldPreviewSpec = useMemo<CurveFieldPreviewSpec>(() => ({
+    version: 1,
+    kind: 'curve-field-preview-spec',
     curveSpace: curveFieldCurveSpace,
     projection: curveFieldProjection,
     output: {

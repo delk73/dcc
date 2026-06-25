@@ -20,7 +20,7 @@ import {
   type CurveChannelId,
   type CurveSpaceIr,
 } from './curveSpaceIr';
-import { hashCurveFieldProjectionIr, hashCurveSpaceIr } from './curveSpaceHash';
+import { hashCurveFieldProjectionCanonical, hashCurveFieldProjectionIr, hashCurveSpaceIr } from './curveSpaceHash';
 import { migrateKeyframesToCurvePoints } from './curvePointPolicy';
 import type { ColorCurve } from '../types';
 
@@ -90,6 +90,8 @@ function makeShapeLerpBasis(
 
 function makeSpec(curveSpace = makeCurveSpace(), projection = makeProjection(), size = 64): CurveFieldPreviewSpec {
   return {
+    version: 1,
+    kind: 'curve-field-preview-spec',
     curveSpace,
     projection,
     output: { width: size, height: size },
@@ -98,6 +100,7 @@ function makeSpec(curveSpace = makeCurveSpace(), projection = makeProjection(), 
 
 assert.equal(hashCurveSpaceIr(makeCurveSpace()), hashCurveSpaceIr(makeCurveSpace()), 'CurveSpaceIr hash is deterministic');
 assert.equal(hashCurveFieldBasisIr(SEPARABLE_RADIAL_BASIS), hashCurveFieldBasisIr(SEPARABLE_RADIAL_BASIS), 'basis hash is deterministic');
+assert.equal(hashCurveFieldProjectionIr(makeProjection()), hashCurveFieldProjectionIr(makeProjection()), 'projection hash is deterministic');
 
 const compiledDefaultBindings = compileCurveParameterBindings([
   { parameter: 'major.response', curveId: 'r', input: 'major-axis' },
@@ -175,6 +178,12 @@ assert.notEqual(
   'basis hash changes when binding parameter changes'
 );
 
+assert.notEqual(
+  hashCurveFieldBasisIr(makeShapeLerpBasis()),
+  hashCurveFieldBasisIr(makeShapeLerpBasis({ circleRadius: 0.35 })),
+  'basis hash changes when constants change'
+);
+
 assert.throws(
   () => compileCurveFieldBasis({
     ...SEPARABLE_RADIAL_BASIS,
@@ -197,6 +206,24 @@ assert.equal(
   hashCurveSpaceIr(makeSpec(makeCurveSpace(), makeProjection(), 64).curveSpace),
   hashCurveSpaceIr(makeSpec(makeCurveSpace(), makeProjection(), 512).curveSpace),
   'Preview size does not change canonical curve-space hash'
+);
+
+assert.equal(
+  hashCurveFieldProjectionIr(makeSpec(makeCurveSpace(), makeProjection(), 64).projection),
+  hashCurveFieldProjectionIr(makeSpec(makeCurveSpace(), makeProjection(), 512).projection),
+  'Preview size does not change projection hash'
+);
+
+assert.notEqual(
+  hashCurveFieldProjectionCanonical(makeCurveSpace(), makeProjection()),
+  hashCurveFieldProjectionCanonical(makeCurveSpace({ r: neutral }), makeProjection()),
+  'canonical hash changes when curve-space changes'
+);
+
+assert.notEqual(
+  hashCurveFieldProjectionCanonical(makeCurveSpace(), makeProjection()),
+  hashCurveFieldProjectionCanonical(makeCurveSpace(), makeProjection({ transform: { scaleX: 0.75 } })),
+  'canonical hash changes when projection changes'
 );
 
 const compiled = compileCurveFieldProjection(makeSpec(), { lutSize: 16 });
