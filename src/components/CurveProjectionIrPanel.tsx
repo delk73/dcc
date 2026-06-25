@@ -79,16 +79,16 @@ export function CurveProjectionIrPanel({ curveSpace, projection, className }: Cu
   }, null, 2), [curveSpace, projection, curveSpaceHash, basisHash, projectionHash, canonicalHash]);
 
   return (
-    <div className={cn('rounded border border-zinc-800 bg-zinc-950', className)}>
-      <button type="button" onClick={() => setExpanded(value => !value)} className="flex w-full items-center gap-2 px-2 py-1 text-left">
+    <div className={cn('rounded-sm border border-zinc-800 bg-zinc-950', className)}>
+      <button type="button" onClick={() => setExpanded(value => !value)} className="flex min-h-5 w-full items-center gap-1.5 px-1.5 py-0.5 text-left leading-none">
         <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">IR / Hash</span>
-        <span className="font-mono text-[10px] text-zinc-600">CurveSpace -&gt; BasisRecipe -&gt; Projection</span>
+        <span className="hidden font-mono text-[10px] text-zinc-600 sm:inline">CurveSpace -&gt; BasisRecipe -&gt; Projection</span>
         <span className="font-mono text-[10px] text-zinc-600">{projection.basis.kind}</span>
         <span className="ml-auto font-mono text-[10px] text-zinc-500">{canonicalHash}</span>
         <span className="font-mono text-[10px] text-zinc-600">{expanded ? '-' : '+'}</span>
       </button>
       {expanded && (
-        <pre className="overflow-x-auto whitespace-pre-wrap break-all px-2 pb-2 font-mono text-[10px] leading-relaxed text-zinc-400">
+        <pre className="overflow-x-auto whitespace-pre-wrap break-all px-1.5 pb-1.5 font-mono text-[10px] leading-relaxed text-zinc-400">
           {summary}
         </pre>
       )}

@@ -406,8 +406,8 @@ export default function App() {
       : activeCurveIndexInfo?.title;
 
     return (
-    <div className={cn("bg-[#09090b] border border-zinc-800 rounded-xl p-2 gap-2 min-h-0 flex flex-col", className)}>
-       <div className="shrink-0 flex items-center gap-2">
+     <div className={cn("bg-[#09090b] border border-zinc-800 rounded-xl p-1.5 gap-1.5 min-h-0 flex flex-col", className)}>
+       <div className="flex min-h-4 shrink-0 items-center gap-2 leading-none">
           <h3 className="text-[10px] uppercase tracking-widest font-bold text-zinc-300 mr-1">Curve Editor</h3>
           {outputMode === 'curve-field' && (
             <span className="text-[10px] font-mono text-zinc-500" title={curveIndexTitle}>
@@ -473,11 +473,11 @@ export default function App() {
   );
 
   const renderCurveFieldPanel = (className = '') => (
-    <div className={cn('flex h-full min-h-0 flex-col gap-2 rounded-none border border-zinc-800 bg-[#09090b] p-2', className)}>
-      <div className="shrink-0">
+    <div className={cn('flex h-full min-h-0 flex-col gap-1.5 rounded-none border border-zinc-800 bg-[#09090b] p-1.5', className)}>
+      <div className="flex min-h-4 shrink-0 items-center leading-none">
         <h3 className="text-[10px] font-bold uppercase tracking-widest text-zinc-300">Field Preview</h3>
       </div>
-      <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded bg-zinc-950">
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-sm bg-zinc-950">
         <CurveFieldProjectionViewer spec={curveFieldPreviewSpec} />
       </div>
       <CurveFieldProjectionControls

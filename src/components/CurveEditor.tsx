@@ -1130,7 +1130,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
         height: boundedHeight,
       }}
       className={cn(
-        "w-full min-h-[240px] relative select-none rounded-xl bg-[#09090b] border border-zinc-800 overflow-hidden shadow-2xl outline-none p-2 flex flex-col gap-1",
+        "w-full min-h-[240px] relative select-none rounded-xl bg-[#09090b] border border-zinc-800 overflow-hidden shadow-2xl outline-none p-1.5 flex flex-col gap-1",
         className ?? "h-full"
       )}
       tabIndex={0}
@@ -1313,7 +1313,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 bg-[#09090b] px-5 py-4">
+      <div className="min-h-0 flex-1 bg-[#09090b] px-2 py-1">
         {selectedTransformSummary && (
           <div className="flex max-w-3xl flex-wrap items-center gap-2 rounded border border-zinc-900/90 bg-black/40 p-2 font-mono text-[10px] uppercase tracking-wider text-zinc-500">
             <span className="mr-2 font-bold text-zinc-300">
@@ -1364,8 +1364,11 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
           </div>
         )}
         {!selectedTransformSummary && (
-          <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">
-            Drag empty plot to box select · Double-click to add · Right-click point to remove · Wheel to zoom
+          <div className="group inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-zinc-600">
+            <span className="rounded border border-zinc-900 bg-zinc-950 px-1 py-px text-zinc-500" title="Drag empty plot to box select · Double-click to add · Right-click point to remove · Wheel to zoom">?</span>
+            <span className="max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all group-hover:max-w-[34rem] group-hover:opacity-100 group-focus-within:max-w-[34rem] group-focus-within:opacity-100">
+              Drag empty plot to box select · Double-click to add · Right-click point to remove · Wheel to zoom
+            </span>
           </div>
         )}
       </div>

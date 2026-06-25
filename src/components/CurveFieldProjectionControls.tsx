@@ -14,7 +14,7 @@ type CurveFieldProjectionControlsProps = {
 };
 
 function NumericDisplay({ value, decimals = 2 }: { value: number; decimals?: number }) {
-  return <span className="w-10 shrink-0 text-right font-mono text-[10px] text-zinc-400">{value.toFixed(decimals)}</span>;
+  return <span className="w-9 shrink-0 text-right font-mono text-[10px] text-zinc-400">{value.toFixed(decimals)}</span>;
 }
 
 function Slider({
@@ -38,7 +38,7 @@ function Slider({
       step={step}
       value={value}
       onChange={event => onChange(Number(event.target.value))}
-      className="h-1 flex-1 accent-zinc-400"
+      className="h-1 min-w-20 flex-1 accent-zinc-400"
     />
   );
 }
@@ -57,10 +57,12 @@ export function CurveFieldProjectionControls({
     ?? CURVE_FIELD_BASIS_RECIPES.find(recipe => JSON.stringify(recipe.basis) === JSON.stringify(basis));
 
   return (
-    <div className={cn('flex flex-col gap-2 p-2', className)}>
-      <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-300">Projection</span>
-      <div className="flex items-center gap-2">
-        <span className="w-16 shrink-0 text-[10px] uppercase tracking-wider text-zinc-500">Basis</span>
+    <div className={cn('flex flex-col gap-1 p-1', className)}>
+      <div className="flex items-center gap-2 leading-none">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-300">Projection</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <span className="w-9 shrink-0 text-[10px] uppercase tracking-wider text-zinc-500">Basis</span>
         <div className="flex flex-wrap gap-1">
           {CURVE_FIELD_BASIS_RECIPES.map(recipe => (
             <button
@@ -68,7 +70,7 @@ export function CurveFieldProjectionControls({
               type="button"
               onClick={() => onBasisRecipeChange(recipe.id)}
               className={cn(
-                'rounded border px-1.5 py-0.5 text-[10px]',
+                'rounded border px-1.5 py-px text-[10px] leading-4',
                 selectedRecipe?.id === recipe.id
                   ? 'border-zinc-600 bg-zinc-700 text-zinc-100'
                   : 'border-zinc-800 text-zinc-500 hover:text-zinc-300'
@@ -79,8 +81,8 @@ export function CurveFieldProjectionControls({
           ))}
         </div>
       </div>
-      <label className="flex items-center gap-2">
-        <span className="w-16 shrink-0 text-[10px] uppercase tracking-wider text-zinc-500">Rotation</span>
+      <label className="flex items-center gap-1.5">
+        <span className="w-9 shrink-0 text-[10px] uppercase tracking-wider text-zinc-500">Rot</span>
         <Slider
           value={rotationDegrees}
           min={-180}
@@ -90,18 +92,18 @@ export function CurveFieldProjectionControls({
         />
         <NumericDisplay value={rotationDegrees} decimals={0} />
       </label>
-      <label className="flex items-center gap-2">
-        <span className="w-16 shrink-0 text-[10px] uppercase tracking-wider text-zinc-500">Scale X</span>
+      <label className="flex items-center gap-1.5">
+        <span className="w-9 shrink-0 text-[10px] uppercase tracking-wider text-zinc-500">Sx</span>
         <Slider value={transform.scaleX} min={0.25} max={2} step={0.025} onChange={value => onTransformChange({ scaleX: value })} />
         <NumericDisplay value={transform.scaleX} />
       </label>
-      <label className="flex items-center gap-2">
-        <span className="w-16 shrink-0 text-[10px] uppercase tracking-wider text-zinc-500">Scale Y</span>
+      <label className="flex items-center gap-1.5">
+        <span className="w-9 shrink-0 text-[10px] uppercase tracking-wider text-zinc-500">Sy</span>
         <Slider value={transform.scaleY} min={0.25} max={2} step={0.025} onChange={value => onTransformChange({ scaleY: value })} />
         <NumericDisplay value={transform.scaleY} />
       </label>
-      <div className="flex items-center gap-2">
-        <span className="w-16 shrink-0 text-[10px] uppercase tracking-wider text-zinc-500">Preview</span>
+      <div className="flex items-center gap-1.5">
+        <span className="w-9 shrink-0 text-[10px] uppercase tracking-wider text-zinc-500">Res</span>
         <div className="flex gap-1">
           {([256, 512] as const).map(size => (
             <button
@@ -109,7 +111,7 @@ export function CurveFieldProjectionControls({
               type="button"
               onClick={() => onPreviewSizeChange(size)}
               className={cn(
-                'rounded border px-1.5 py-0.5 font-mono text-[10px]',
+                'rounded border px-1.5 py-px font-mono text-[10px] leading-4',
                 previewSize === size
                   ? 'border-zinc-600 bg-zinc-700 text-zinc-100'
                   : 'border-zinc-800 text-zinc-500 hover:text-zinc-300'
