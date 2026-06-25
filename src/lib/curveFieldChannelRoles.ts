@@ -35,8 +35,9 @@ function getChannelSemanticLabel(basis: CurveFieldBasisIr, channel: CurveChannel
 export function getCurveFieldChannelRoleLabels(basis: CurveFieldBasisIr): string[] {
   return basis.bindings
     .map(binding => {
-      if (!PARAMETER_LABELS[binding.parameter]) return undefined;
-      const roleLabel = getChannelSemanticLabel(basis, binding.curveId) ?? PARAMETER_LABELS[binding.parameter];
+      const parameterLabel = PARAMETER_LABELS[binding.parameter];
+      if (!parameterLabel && binding.parameter.includes('.')) return undefined;
+      const roleLabel = parameterLabel ?? getChannelSemanticLabel(basis, binding.curveId);
       return roleLabel ? `${CHANNEL_LABELS[binding.curveId]} ${roleLabel}` : undefined;
     })
     .filter((label): label is string => Boolean(label));

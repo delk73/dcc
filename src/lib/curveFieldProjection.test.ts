@@ -133,6 +133,15 @@ assert.equal(
   'R Circle  G Triangle  B Morph  A Transfer',
   'shape-lerp corner recipe keeps the same visible channel roles'
 );
+assert.ok(
+  getCurveFieldChannelRoleSummary({
+    ...SHAPE_LERP_CIRCLE_TRIANGLE_BASIS,
+    bindings: SHAPE_LERP_CIRCLE_TRIANGLE_BASIS.bindings.map(binding => binding.parameter === 'shape.morph'
+      ? { ...binding, curveId: 'r' }
+      : binding),
+  }).includes('R Morph'),
+  'shape-lerp binding override labels R by parameter role, not default channel semantic'
+);
 
 (['r', 'g', 'b', 'a'] as CurveChannelId[]).forEach(channel => {
   assert.notEqual(
