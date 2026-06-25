@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import { compileCurveFieldProjection } from './curveFieldProjectionCompile';
 import { evaluateCompiledCurveFieldProjection, worldToCurveFieldLocal } from './curveFieldProjectionEval';
+import { compileCurveParameterBindings } from './curveParameterBindingCompile';
+import { getCurveFieldChannelRoleSummary } from './curveFieldChannelRoles';
 import { DEFAULT_CURVE_FIELD_PROJECTION, type CurveFieldProjectionIr, type CurveFieldPreviewSpec } from './curveProjectionIr';
 import {
   SEPARABLE_RADIAL_BASIS,
   SHAPE_LERP_CIRCLE_TRIANGLE_BASIS,
+  SHAPE_LERP_CIRCLE_TRIANGLE_B_CORNERS_BASIS,
   type CurveFieldBasisIr,
   type ShapeLerpBasisIr,
 } from './curveFieldBasisIr';
@@ -95,6 +98,38 @@ function makeSpec(curveSpace = makeCurveSpace(), projection = makeProjection(), 
 assert.equal(hashCurveSpaceIr(makeCurveSpace()), hashCurveSpaceIr(makeCurveSpace()), 'CurveSpaceIr hash is deterministic');
 assert.equal(hashCurveFieldBasisIr(SEPARABLE_RADIAL_BASIS), hashCurveFieldBasisIr(SEPARABLE_RADIAL_BASIS), 'basis hash is deterministic');
 
+const compiledDefaultBindings = compileCurveParameterBindings([
+  { parameter: 'major.response', curveId: 'r', input: 'major-axis' },
+]);
+assert.deepEqual(compiledDefaultBindings[0].remap, {
+  scale: 1,
+  offset: 0,
+  invert: false,
+  clamp: 'none',
+}, 'binding compile fills default remap values');
+
+const multiUseBindings = compileCurveParameterBindings([
+  { parameter: 'major.response', curveId: 'r', input: 'major-axis' },
+  { parameter: 'transfer.output', curveId: 'r', input: 'field' },
+]);
+assert.equal(multiUseBindings[0].curveId, 'r', 'one curve can drive first binding');
+assert.equal(multiUseBindings[1].curveId, 'r', 'one curve can drive second binding');
+assert.equal(
+  getCurveFieldChannelRoleSummary(SEPARABLE_RADIAL_BASIS),
+  'R Major  G Orth  B Radial  A Transfer',
+  'separable-radial channel roles are derived from bindings'
+);
+assert.equal(
+  getCurveFieldChannelRoleSummary(SHAPE_LERP_CIRCLE_TRIANGLE_BASIS),
+  'R Circle  G Triangle  B Morph  A Transfer',
+  'shape-lerp channel roles are derived from bindings'
+);
+assert.equal(
+  getCurveFieldChannelRoleSummary(SHAPE_LERP_CIRCLE_TRIANGLE_B_CORNERS_BASIS),
+  'R Circle  G Triangle  B Morph  A Transfer',
+  'shape-lerp corner recipe keeps the same visible channel roles'
+);
+
 (['r', 'g', 'b', 'a'] as CurveChannelId[]).forEach(channel => {
   assert.notEqual(
     hashCurveSpaceIr(makeCurveSpace()),
@@ -115,6 +150,30 @@ assert.notEqual(
   'Projection hash changes when basis kind changes'
 );
 
+assert.notEqual(
+  hashCurveFieldProjectionIr(makeProjection({ basis: SEPARABLE_RADIAL_BASIS })),
+  hashCurveFieldProjectionIr(makeProjection({
+    basis: {
+      ...SEPARABLE_RADIAL_BASIS,
+      bindings: SEPARABLE_RADIAL_BASIS.bindings.map(binding => binding.parameter === 'major.response'
+        ? { ...binding, curveId: 'g' }
+        : binding),
+    },
+  })),
+  'Projection hash changes when binding curveId changes'
+);
+
+assert.notEqual(
+  hashCurveFieldBasisIr(SEPARABLE_RADIAL_BASIS),
+  hashCurveFieldBasisIr({
+    ...SEPARABLE_RADIAL_BASIS,
+    bindings: SEPARABLE_RADIAL_BASIS.bindings.map(binding => binding.parameter === 'major.response'
+      ? { ...binding, parameter: 'major.altResponse' }
+      : binding),
+  }),
+  'basis hash changes when binding parameter changes'
+);
+
 assert.equal(
   hashCurveSpaceIr(makeSpec(makeCurveSpace(), makeProjection(), 64).curveSpace),
   hashCurveSpaceIr(makeSpec(makeCurveSpace(), makeProjection(), 512).curveSpace),
@@ -129,6 +188,12 @@ assert.equal(compiled.channels.a.length, 16, 'compile creates A LUT');
 assert.equal(evaluateCompiledCurveFieldProjection(compiled, 31, 31), evaluateCompiledCurveFieldProjection(compiled, 31, 31), 'compiled evaluator is deterministic');
 assert.equal('curveSpace' in compiled, false, 'compiled evaluator does not require raw curve-space data');
 assert.equal(compiled.basis.kind, 'separable-radial', 'existing separable-radial basis still compiles');
+if (compiled.basis.kind === 'separable-radial') {
+  assert.equal(compiled.basis.majorResponse.parameter, 'major.response', 'separable-radial basis compiles major binding slot');
+  assert.equal(compiled.basis.orthogonalResponse.parameter, 'orthogonal.response', 'separable-radial basis compiles orthogonal binding slot');
+  assert.equal(compiled.basis.radialResponse.parameter, 'radial.response', 'separable-radial basis compiles radial binding slot');
+  assert.equal(compiled.basis.transferOutput.parameter, 'transfer.output', 'separable-radial basis compiles transfer binding slot');
+}
 
 assert.equal(hdrToSigned(0), -1, 'HDR 0 maps to signed -1');
 assert.equal(hdrToSigned(1), 0, 'HDR 1 maps to signed 0');
@@ -165,6 +230,12 @@ const shapeCurve = makeCurveSpace({
 const shapeProjection = makeProjection({ basis: makeShapeLerpBasis() });
 const shapeCompiled = compileCurveFieldProjection(makeSpec(shapeCurve, shapeProjection), { lutSize: 32 });
 assert.equal(shapeCompiled.basis.kind, 'shape-lerp', 'shape-lerp basis compiles');
+if (shapeCompiled.basis.kind === 'shape-lerp') {
+  assert.equal(shapeCompiled.basis.circleResponse.parameter, 'circle.response', 'shape-lerp basis compiles circle binding slot');
+  assert.equal(shapeCompiled.basis.triangleResponse.parameter, 'triangle.response', 'shape-lerp basis compiles triangle binding slot');
+  assert.equal(shapeCompiled.basis.shapeMorph.parameter, 'shape.morph', 'shape-lerp basis compiles morph binding slot');
+  assert.equal(shapeCompiled.basis.transferOutput.parameter, 'transfer.output', 'shape-lerp basis compiles transfer binding slot');
+}
 assert.equal(
   evaluateCompiledCurveFieldProjection(shapeCompiled, 18, 27),
   evaluateCompiledCurveFieldProjection(shapeCompiled, 18, 27),
@@ -207,6 +278,30 @@ assert.notEqual(
   shapeBaseline,
   evaluateCompiledCurveFieldProjection(compileCurveFieldProjection(makeSpec(shapeCurve, makeProjection({ basis: makeShapeLerpBasis({ triangleRadius: 0.45 }) }))), 18, 27),
   'shape-lerp output changes when triangle radius changes'
+);
+
+const cornerShapeCurve = makeCurveSpace({
+  r: makeChannel([[0, 1], [1, 1]]),
+  g: makeChannel([[0, 0], [0.5, 2], [1, 0]]),
+  b: makeChannel([[0, 0], [1, 2]]),
+  a: identityTransfer,
+});
+const cornerProjection = makeProjection({ basis: SHAPE_LERP_CIRCLE_TRIANGLE_B_CORNERS_BASIS });
+const cornerCompiled = compileCurveFieldProjection(makeSpec(cornerShapeCurve, cornerProjection), { lutSize: 64 });
+assert.equal(cornerCompiled.basis.kind, 'shape-lerp', 'shape-lerp corner recipe compiles');
+if (cornerCompiled.basis.kind === 'shape-lerp') {
+  assert.equal(cornerCompiled.basis.cornerRoundness?.parameter, 'shape.cornerRoundness', 'shape-lerp corner recipe compiles corner binding slot');
+  assert.equal(cornerCompiled.basis.cornerRoundness?.curveId, 'b', 'shape-lerp corner recipe uses B for corner roundness');
+}
+
+const fixedCornerBasis: ShapeLerpBasisIr = {
+  ...SHAPE_LERP_CIRCLE_TRIANGLE_B_CORNERS_BASIS,
+  bindings: SHAPE_LERP_CIRCLE_TRIANGLE_B_CORNERS_BASIS.bindings.filter(binding => binding.parameter !== 'shape.cornerRoundness'),
+};
+assert.notEqual(
+  evaluateCompiledCurveFieldProjection(cornerCompiled, 28, 18),
+  evaluateCompiledCurveFieldProjection(compileCurveFieldProjection(makeSpec(cornerShapeCurve, makeProjection({ basis: fixedCornerBasis }), 64), { lutSize: 64 }), 28, 18),
+  'B-driven corner roundness changes shape-lerp output'
 );
 
 console.log('curveFieldProjection tests passed');

@@ -43,6 +43,19 @@ export function CurveProjectionIrPanel({ curveSpace, projection, className }: Cu
       transform: projection.transform,
       basisKind: projection.basis.kind,
       basisHash,
+      bindings: projection.basis.bindings.map(binding => ({
+        parameter: binding.parameter,
+        curveId: binding.curveId,
+        input: binding.input,
+        remap: binding.remap,
+      })),
+      constants: projection.basis.kind === 'shape-lerp'
+        ? {
+            circleRadius: projection.basis.shapes.a.radius,
+            triangleRadius: projection.basis.shapes.b.radius,
+            triangleCornerRoundness: projection.basis.shapes.b.cornerRoundness,
+          }
+        : undefined,
       hash: projectionHash,
     },
     canonicalHash,

@@ -12,6 +12,7 @@ import { Download, RotateCcw, Settings2 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { InterpMode, computeTangents, evaluateCurve, blendSpaceCurves } from './lib/curveUtils';
 import { colorCurveToCurveSpaceIr } from './lib/curveSpaceIr';
+import { getCurveFieldChannelRoleSummary } from './lib/curveFieldChannelRoles';
 import { type CurveFieldPreviewSpec } from './lib/curveProjectionIr';
 import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
 import {
@@ -298,6 +299,11 @@ export default function App() {
     },
   }), [curveFieldCurveSpace, curveFieldProjection, curveFieldPreviewSize]);
 
+  const curveFieldChannelRoleSummary = useMemo(
+    () => getCurveFieldChannelRoleSummary(curveFieldProjection.basis),
+    [curveFieldProjection.basis]
+  );
+
   const pushSpace = (importedLibrary: LibraryCurve[]) => {
     dispatch({ type: 'reset-space', library: importedLibrary });
     dispatch({ type: 'set-main-view', mainView: TWO_DIMENSIONAL_WORKSPACE_VIEW });
@@ -394,7 +400,7 @@ export default function App() {
     const editorHeight = Math.max(240, layout.curveEditor.height - (showPasteArea ? pasteAreaHeight : 0) - 88);
     const editorCurve = outputMode === 'curve-field' ? curveFieldCurve : activeSpaceCurve;
     const curveIndexTitle = outputMode === 'curve-field'
-      ? 'R Major / G Orth / B Interact / A Transfer'
+      ? curveFieldChannelRoleSummary.replace(/  /g, ' / ')
       : activeCurveIndexInfo?.title;
 
     return (
@@ -402,8 +408,8 @@ export default function App() {
        <div className="shrink-0 flex items-center gap-2">
           <h3 className="text-[10px] uppercase tracking-widest font-bold text-zinc-300 mr-1">Curve Editor</h3>
           {outputMode === 'curve-field' && (
-            <span className="text-[10px] font-mono text-zinc-500" title="R Major, G Orthogonal, B Interaction, A Transfer">
-              R Major&nbsp;&nbsp;G Orth&nbsp;&nbsp;B Interact&nbsp;&nbsp;A Transfer
+            <span className="text-[10px] font-mono text-zinc-500" title={curveIndexTitle}>
+              {curveFieldChannelRoleSummary}
             </span>
           )}
        </div>
@@ -477,8 +483,7 @@ export default function App() {
         basis={curveFieldProjection.basis}
         previewSize={curveFieldPreviewSize}
         onTransformChange={transform => dispatchProjection({ type: 'set-curve-field-transform', transform })}
-        onBasisKindChange={kind => dispatchProjection({ type: 'set-curve-field-basis-kind', kind })}
-        onShapeLerpParamsChange={params => dispatchProjection({ type: 'set-shape-lerp-params', params })}
+        onBasisRecipeChange={id => dispatchProjection({ type: 'set-curve-field-basis-recipe', id })}
         onPreviewSizeChange={size => dispatchProjection({ type: 'set-curve-field-preview-size', size })}
       />
       <CurveProjectionIrPanel curveSpace={curveFieldCurveSpace} projection={curveFieldProjection} />

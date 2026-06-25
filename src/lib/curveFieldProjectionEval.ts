@@ -1,7 +1,9 @@
 import type { CompiledCurveFieldProjection } from './curveFieldProjectionCompile';
+import type { CompiledCurveParameterBinding } from './curveParameterBindingCompile';
 import { circleDistanceToT, triangleDistanceToT } from './curveFieldShapeKernels';
 import {
   clamp01,
+  clampHdr,
   hdrToSigned,
   signedCoordToT,
   signedToCurveT,
@@ -35,8 +37,37 @@ function sampleLutHdr(lut: Float32Array, t: number): number {
   return lut[leftIndex] + (lut[rightIndex] - lut[leftIndex]) * ratio;
 }
 
-function sampleLutSigned(lut: Float32Array, t: number): number {
-  return hdrToSigned(sampleLutHdr(lut, t));
+function applyBindingRemap(value: number, binding: CompiledCurveParameterBinding): number {
+  const inverted = binding.remap.invert ? 1 - value : value;
+  const remapped = inverted * binding.remap.scale + binding.remap.offset;
+
+  switch (binding.remap.clamp) {
+    case '01':
+      return clamp01(remapped);
+    case 'hdr':
+      return clampHdr(remapped);
+    case 'signed':
+      return Math.max(-1, Math.min(1, remapped));
+    case 'none':
+    default:
+      return remapped;
+  }
+}
+
+function sampleBindingHdr(
+  compiled: CompiledCurveFieldProjection,
+  binding: CompiledCurveParameterBinding,
+  inputT: number
+): number {
+  return applyBindingRemap(sampleLutHdr(compiled.channels[binding.curveId], inputT), binding);
+}
+
+function sampleBindingSigned(
+  compiled: CompiledCurveFieldProjection,
+  binding: CompiledCurveParameterBinding,
+  inputT: number
+): number {
+  return hdrToSigned(clampHdr(sampleBindingHdr(compiled, binding, inputT)));
 }
 
 export function evaluateCompiledCurveFieldProjection(
@@ -57,27 +88,30 @@ export function evaluateCompiledCurveFieldProjection(
   switch (compiled.basis.kind) {
     case 'shape-lerp': {
       const circleT = circleDistanceToT(localX, localY, compiled.basis.circleRadius);
+      const cornerRoundness = compiled.basis.cornerRoundness
+        ? sampleBindingHdr(compiled, compiled.basis.cornerRoundness, radialT)
+        : compiled.basis.triangleCornerRoundness;
       const triangleT = triangleDistanceToT(
         localX,
         localY,
         compiled.basis.triangleRadius,
-        compiled.basis.triangleCornerRoundness
+        cornerRoundness
       );
-      const circleResponse = sampleLutSigned(compiled.channels.r, circleT);
-      const triangleResponse = sampleLutSigned(compiled.channels.g, triangleT);
-      const mixT = clamp01(sampleLutHdr(compiled.channels.b, radialT) * 0.5);
+      const circleResponse = sampleBindingSigned(compiled, compiled.basis.circleResponse, circleT);
+      const triangleResponse = sampleBindingSigned(compiled, compiled.basis.triangleResponse, triangleT);
+      const mixT = clamp01(sampleBindingHdr(compiled, compiled.basis.shapeMorph, radialT) * 0.5);
       const base = circleResponse + (triangleResponse - circleResponse) * mixT;
-      const outSigned = sampleLutSigned(compiled.channels.a, signedToCurveT(base));
+      const outSigned = sampleBindingSigned(compiled, compiled.basis.transferOutput, signedToCurveT(base));
 
       return signedToPreviewGray(outSigned);
     }
     case 'separable-radial':
     default: {
-      const r = sampleLutSigned(compiled.channels.r, signedCoordToT(localX));
-      const g = sampleLutSigned(compiled.channels.g, signedCoordToT(localY));
-      const b = sampleLutSigned(compiled.channels.b, radialT);
+      const r = sampleBindingSigned(compiled, compiled.basis.majorResponse, signedCoordToT(localX));
+      const g = sampleBindingSigned(compiled, compiled.basis.orthogonalResponse, signedCoordToT(localY));
+      const b = sampleBindingSigned(compiled, compiled.basis.radialResponse, radialT);
       const base = Math.min(r, g, b);
-      const outSigned = sampleLutSigned(compiled.channels.a, signedToCurveT(base));
+      const outSigned = sampleBindingSigned(compiled, compiled.basis.transferOutput, signedToCurveT(base));
 
       return signedToPreviewGray(outSigned);
     }
