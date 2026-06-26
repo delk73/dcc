@@ -7,8 +7,10 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Maximize2, Minus, Plus } from 'lucide-react';
 import { ColorCurve, Channel, ChannelMask, CurvePoint } from '../types';
+import { CurveLaneLegend } from './CurveLaneLegend';
 import { cn } from '../lib/utils';
 import { computeTangents, evaluateCurve, InterpMode } from '../lib/curveUtils';
+import type { CurveMappingRow } from '../lib/curveMappingRows';
 import {
   DEFAULT_CURVE_VIEWPORT,
   buildTicks,
@@ -33,6 +35,8 @@ interface CurveEditorProps {
   curve: ColorCurve;
   onChange: (curve: ColorCurve) => void;
   editChannels: ChannelMask;
+  activeChannel: Channel;
+  laneLegendRows: CurveMappingRow[];
   selectedPoint: SelectedPointRef | null;
   onActiveChannelChange: (channel: Channel) => void;
   onEditChannelToggle: (channel: Channel) => void;
@@ -161,6 +165,8 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   curve,
   onChange,
   editChannels,
+  activeChannel,
+  laneLegendRows,
   selectedPoint,
   onActiveChannelChange,
   onEditChannelToggle,
@@ -1249,36 +1255,15 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
           className="flex min-w-0 items-center gap-2"
           style={{ paddingLeft: SVG_MARGIN.left }}
         >
-          <div className="flex items-center gap-1 rounded border border-zinc-950 bg-zinc-900/40 p-0.5">
-            {CHANNELS.map((channel) => {
-              const isEditable = editChannels[channel];
+          <CurveLaneLegend
+            rows={laneLegendRows}
+            editChannels={editChannels}
+            activeChannel={activeChannel}
+            onToggleChannel={onEditChannelToggle}
+            compact
+          />
 
-              return (
-                <button
-                  key={channel}
-                  type="button"
-                  onClick={() => onEditChannelToggle(channel)}
-                  aria-label={`${isEditable ? 'Disable' : 'Enable'} ${channel.toUpperCase()} editing`}
-                  aria-pressed={isEditable}
-                  className={cn(
-                    "flex h-6 min-w-8 items-center justify-center gap-1 rounded border px-1.5 font-mono text-[10px] font-bold transition-colors",
-                    isEditable
-                      ? "border-zinc-700 bg-zinc-900 text-zinc-100"
-                      : "border-transparent bg-transparent text-zinc-600 opacity-45 hover:bg-zinc-900 hover:text-zinc-400"
-                  )}
-                  title={`${isEditable ? 'Disable' : 'Enable'} ${channel.toUpperCase()} editing`}
-                >
-                  <span
-                    className="h-1 w-1 rounded-full"
-                    style={{ backgroundColor: CHANNEL_COLORS[channel] }}
-                  />
-                  {channel.toUpperCase()}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="truncate font-mono text-[10px] tracking-wider text-zinc-500">
+          <div className="hidden truncate font-mono text-[10px] tracking-wider text-zinc-500 lg:block">
             DOMAIN: <span className="font-bold text-zinc-400">[ 0.000 ] - [ 1.000 ]</span>
           </div>
         </div>

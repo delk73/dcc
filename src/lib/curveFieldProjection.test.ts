@@ -4,6 +4,7 @@ import { compileCurveFieldProjection } from './curveFieldProjectionCompile';
 import { evaluateCompiledCurveFieldProjection, worldToCurveFieldLocal } from './curveFieldProjectionEval';
 import { compileCurveParameterBindings } from './curveParameterBindingCompile';
 import { getCurveFieldChannelRoleSummary } from './curveFieldChannelRoles';
+import { getAtlasMappingRows, getCurveFieldMappingRows } from './curveMappingRows';
 import { DEFAULT_CURVE_FIELD_PROJECTION, type CurveFieldProjectionIr, type CurveFieldPreviewSpec } from './curveProjectionIr';
 import {
   SEPARABLE_RADIAL_BASIS,
@@ -118,6 +119,35 @@ const multiUseBindings = compileCurveParameterBindings([
 ]);
 assert.equal(multiUseBindings[0].curveId, 'r', 'one curve can drive first binding');
 assert.equal(multiUseBindings[1].curveId, 'r', 'one curve can drive second binding');
+assert.deepEqual(
+  getAtlasMappingRows().map(row => `${row.curveLabel} ${row.roleLabel}`),
+  ['R Red', 'G Green', 'B Blue', 'A Alpha'],
+  'atlas mapping rows show readonly RGBA legend'
+);
+assert.deepEqual(
+  getCurveFieldMappingRows(SEPARABLE_RADIAL_BASIS, { shortLabels: true }).map(row => `${row.curveLabel} ${row.roleLabel}`),
+  ['R Major', 'G Orth', 'B Radial', 'A Transfer'],
+  'separable-radial mapping rows are binding-aware'
+);
+assert.deepEqual(
+  getCurveFieldMappingRows(SHAPE_LERP_CIRCLE_TRIANGLE_BASIS).map(row => `${row.curveLabel} ${row.roleLabel}`),
+  ['R Circle', 'G Triangle', 'B Morph', 'A Transfer'],
+  'shape-lerp mapping rows are binding-aware'
+);
+assert.deepEqual(
+  getCurveFieldMappingRows(SHAPE_LERP_CIRCLE_TRIANGLE_B_CORNERS_BASIS).map(row => `${row.curveLabel} ${row.roleLabel}`),
+  ['R Circle', 'G Triangle', 'B Morph', 'A Transfer'],
+  'mapping rows do not duplicate auxiliary unlabeled bindings'
+);
+assert.ok(
+  getCurveFieldMappingRows({
+    ...SHAPE_LERP_CIRCLE_TRIANGLE_BASIS,
+    bindings: SHAPE_LERP_CIRCLE_TRIANGLE_BASIS.bindings.map(binding => binding.parameter === 'shape.morph'
+      ? { ...binding, curveId: 'r' }
+      : binding),
+  }).map(row => `${row.curveLabel} ${row.roleLabel}`).includes('R Morph'),
+  'shape-lerp mapping rows label R by parameter role when shape.morph is bound to R'
+);
 assert.equal(
   getCurveFieldChannelRoleSummary(SEPARABLE_RADIAL_BASIS),
   'R Major  G Orth  B Radial  A Transfer',

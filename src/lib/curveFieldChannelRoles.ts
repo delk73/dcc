@@ -1,46 +1,9 @@
 import type { CurveFieldBasisIr } from './curveFieldBasisIr';
-import type { CurveChannelId } from './curveSpaceIr';
-
-const CHANNEL_LABELS: Record<CurveChannelId, string> = {
-  r: 'R',
-  g: 'G',
-  b: 'B',
-  a: 'A',
-};
-
-const PARAMETER_LABELS: Record<string, string> = {
-  'major.response': 'Major',
-  'orthogonal.response': 'Orth',
-  'radial.response': 'Radial',
-  'circle.response': 'Circle',
-  'triangle.response': 'Triangle',
-  'shape.morph': 'Morph',
-  'transfer.output': 'Transfer',
-};
-
-const CHANNEL_ROLE_LABELS: Record<string, string> = {
-  'major-axis': 'Major',
-  'orthogonal-axis': 'Orth',
-  'radial-interaction': 'Radial',
-  'circle-response': 'Circle',
-  'triangle-response': 'Triangle',
-  'shape-lerp': 'Morph',
-  'final-transfer': 'Transfer',
-};
-
-function getChannelSemanticLabel(basis: CurveFieldBasisIr, channel: CurveChannelId): string | undefined {
-  return CHANNEL_ROLE_LABELS[basis.channels[channel]];
-}
+import { getCurveFieldMappingRows } from './curveMappingRows';
 
 export function getCurveFieldChannelRoleLabels(basis: CurveFieldBasisIr): string[] {
-  return basis.bindings
-    .map(binding => {
-      const parameterLabel = PARAMETER_LABELS[binding.parameter];
-      if (!parameterLabel && binding.parameter.includes('.')) return undefined;
-      const roleLabel = parameterLabel ?? getChannelSemanticLabel(basis, binding.curveId);
-      return roleLabel ? `${CHANNEL_LABELS[binding.curveId]} ${roleLabel}` : undefined;
-    })
-    .filter((label): label is string => Boolean(label));
+  return getCurveFieldMappingRows(basis, { shortLabels: true })
+    .map(row => `${row.curveLabel} ${row.roleLabel}`);
 }
 
 export function getCurveFieldChannelRoleSummary(basis: CurveFieldBasisIr): string {

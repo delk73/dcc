@@ -13,6 +13,7 @@ import { cn } from './lib/utils';
 import { InterpMode, computeTangents, evaluateCurve, blendSpaceCurves } from './lib/curveUtils';
 import { colorCurveToCurveSpaceIr } from './lib/curveSpaceIr';
 import { getCurveFieldChannelRoleSummary } from './lib/curveFieldChannelRoles';
+import { getAtlasMappingRows, getCurveFieldMappingRows } from './lib/curveMappingRows';
 import { type CurveFieldPreviewSpec } from './lib/curveProjectionIr';
 import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
 import {
@@ -105,6 +106,7 @@ export default function App() {
   const {
     mainView,
     levers,
+    activeChannel,
     editChannels,
     interpMode,
     selectedPoint,
@@ -306,6 +308,13 @@ export default function App() {
     [curveFieldProjection.basis]
   );
 
+  const curveLaneLegendRows = useMemo(
+    () => outputMode === 'curve-field'
+      ? getCurveFieldMappingRows(curveFieldProjection.basis)
+      : getAtlasMappingRows(),
+    [curveFieldProjection.basis, outputMode]
+  );
+
   const pushSpace = (importedLibrary: LibraryCurve[]) => {
     dispatch({ type: 'reset-space', library: importedLibrary });
     dispatch({ type: 'set-main-view', mainView: TWO_DIMENSIONAL_WORKSPACE_VIEW });
@@ -420,6 +429,8 @@ export default function App() {
           curve={editorCurve}
           onChange={updateEditorCurve}
           editChannels={editChannels}
+          activeChannel={activeChannel}
+          laneLegendRows={curveLaneLegendRows}
           selectedPoint={selectedPoint}
           onActiveChannelChange={(channel) => dispatch({ type: 'set-active-channel', channel })}
           onEditChannelToggle={toggleEditChannel}
