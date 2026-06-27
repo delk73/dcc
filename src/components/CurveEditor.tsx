@@ -81,6 +81,7 @@ const CHANNEL_COLORS = {
 const POINT_EPSILON = 0.00001;
 const DRAG_THRESHOLD_PX = 3;
 const POINT_HIT_RADIUS = 12;
+const PLOT_CLIP_BLEED = POINT_HIT_RADIUS + 4;
 const DOMAIN_GUIDE_HIT_RADIUS = 12;
 const CHANNELS: Channel[] = ['r', 'g', 'b', 'a'];
 const isEdgeOwner = (point: CurvePoint) => getEdgeOwner(point) === 'start' || getEdgeOwner(point) === 'end';
@@ -207,7 +208,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     180,
     (boundedHeight ?? HEIGHT) - PREVIEW_STRIP_HEIGHT - CONTROL_BAR_HEIGHT - 48
   );
-  const lockedPlotWidth = Math.ceil(availablePlotHeight * SVG_ASPECT_RATIO);
+  const lockedPlotWidth = boundedWidth ?? Math.ceil(availablePlotHeight * SVG_ASPECT_RATIO);
 
   const computedViewport = useMemo<CurveViewport>(() => {
     const anchorTime = Math.max(0, Math.min(1, zoomAnchor.time));
@@ -1190,10 +1191,10 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
               <defs>
                 <clipPath id={plotClipId}>
                   <rect
-                    x={PLOT_RECT.left}
-                    y={PLOT_RECT.top}
-                    width={PLOT_RECT.width}
-                    height={PLOT_RECT.height}
+                    x={PLOT_RECT.left - PLOT_CLIP_BLEED}
+                    y={PLOT_RECT.top - PLOT_CLIP_BLEED}
+                    width={PLOT_RECT.width + PLOT_CLIP_BLEED * 2}
+                    height={PLOT_RECT.height + PLOT_CLIP_BLEED * 2}
                   />
                 </clipPath>
               </defs>

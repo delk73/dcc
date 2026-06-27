@@ -9,7 +9,7 @@ import { OutputModeTabs } from './components/OutputModeTabs';
 import { CurveFieldProjectionControls } from './components/CurveFieldProjectionControls';
 import { CurveFieldProjectionViewer } from './components/CurveFieldProjectionViewer';
 import { CurveProjectionIrPanel } from './components/CurveProjectionIrPanel';
-import { Download, RotateCcw, Settings2 } from 'lucide-react';
+import { Copy, Download, RotateCcw, Settings2 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { InterpMode, computeTangents, evaluateCurve, blendSpaceCurves } from './lib/curveUtils';
 import { colorCurveToCurveSpaceIr } from './lib/curveSpaceIr';
@@ -441,6 +441,9 @@ export default function App() {
     navigator.clipboard?.writeText(hash).catch(console.error);
   };
 
+  const formatShortHash = (hash: string) =>
+    `${hash.slice(0, 8)}${hash.length > 8 ? '...' : ''}`;
+
   const renderCurveEditorPanel = (className = '', editorClassName = '') => {
     const pasteAreaHeight = layout.curveEditor.height >= 520 ? 156 : 132;
     const showPasteArea = outputMode === 'atlas';
@@ -451,16 +454,64 @@ export default function App() {
     const recipeIdentity = outputMode === 'curve-field'
       ? { name: curveFieldRecipeName, hash: curveFieldRecipeHash }
       : { name: activeCurveIndexInfo?.name ?? 'Atlas Recipe', hash: atlasRecipeHash };
+    const activeMappingRow = curveLaneLegendRows.find(row => row.curveId === activeChannel) ?? curveLaneLegendRows[0];
+    const expressionTerms = curveLaneLegendRows.map(row => row.roleLabel);
+    const expressionText = expressionTerms.length > 1
+      ? `Output = compose(${expressionTerms.join(', ')})`
+      : `Output = ${expressionTerms[0] ?? activeChannel.toUpperCase()}`;
+    const showingLabel = activeMappingRow
+      ? `${activeMappingRow.roleLabel}${activeMappingRow.input ? ` / ${activeMappingRow.input}` : ''}`
+      : activeChannel.toUpperCase();
+    const basisLabel = outputMode === 'curve-field' ? curveFieldRecipeName : 'Atlas';
 
     return (
      <div className={cn("bg-[#09090b] border border-zinc-800 rounded-xl p-1.5 gap-1.5 min-h-0 flex flex-col", className)}>
-       <div className="flex min-h-4 shrink-0 items-center gap-2 leading-none">
-          <h3 className="text-[10px] uppercase tracking-widest font-bold text-zinc-300 mr-1">Curve Editor</h3>
-          {outputMode === 'curve-field' && (
-            <span className="text-[10px] font-mono text-zinc-500" title={curveIndexTitle}>
-              {curveFieldChannelRoleSummary}
-            </span>
+       <div className="flex min-h-7 shrink-0 items-center gap-2 overflow-hidden border-b border-zinc-900/90 px-1.5 pb-1 font-mono text-[10px] leading-none text-zinc-500">
+          <span className="shrink-0 font-bold uppercase tracking-widest text-zinc-400">Recipe:</span>
+          <span className="min-w-0 truncate text-zinc-100" title={recipeIdentity.name}>{recipeIdentity.name}</span>
+          <span className="shrink-0" title={recipeIdentity.hash}>hash <span className="text-zinc-300">{formatShortHash(recipeIdentity.hash)}</span></span>
+          <span className="hidden min-w-0 truncate sm:inline" title={basisLabel}>Basis: <span className="text-zinc-300">{basisLabel}</span></span>
+          <span className="hidden shrink-0 sm:inline">Mode: <span className="text-zinc-300">inspect / edit / bind</span></span>
+          <button
+            type="button"
+            onClick={copyRecipeHash}
+            className="ml-auto grid h-5 w-5 shrink-0 place-items-center rounded text-zinc-500 hover:bg-white/10 hover:text-zinc-100"
+            title="Copy recipe hash"
+            aria-label="Copy recipe hash"
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </button>
+          {outputMode === 'atlas' && (
+            <button
+              type="button"
+              onClick={handleExportLibraryLUT}
+              disabled={normalizedCategoryCurves.length <= 1}
+              className="grid h-5 w-5 shrink-0 place-items-center rounded text-zinc-500 hover:bg-white/10 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-40"
+              title="Export 2D atlas"
+              aria-label="Export 2D atlas"
+            >
+              <Download className="h-3.5 w-3.5" />
+            </button>
           )}
+       </div>
+
+       <section className="shrink-0 rounded-sm border border-zinc-900/90 bg-black/25 px-2 py-1 font-mono text-[10px]">
+          <div className="flex items-center gap-2 leading-none">
+            <h3 className="shrink-0 font-bold uppercase tracking-widest text-zinc-400">Curve Expression</h3>
+            {outputMode === 'curve-field' && (
+              <span className="min-w-0 truncate text-zinc-600" title={curveIndexTitle}>
+                {curveFieldChannelRoleSummary}
+              </span>
+            )}
+          </div>
+          <div className="mt-1 truncate text-zinc-200" title={expressionText}>{expressionText}</div>
+       </section>
+
+       <div className="flex min-h-4 shrink-0 items-center gap-2 px-1.5 leading-none">
+          <h3 className="text-[10px] font-bold uppercase tracking-widest text-zinc-300">Curve Editor</h3>
+          <span className="min-w-0 truncate font-mono text-[10px] text-zinc-500" title={showingLabel}>
+            Showing: <span className="text-zinc-300">{showingLabel}</span>
+          </span>
        </div>
 
        <CurveEditor
@@ -483,16 +534,12 @@ export default function App() {
           className={editorClassName}
        />
        <CurveMappingLedger
-          recipe={recipeIdentity}
           rows={curveLaneLegendRows}
           editChannels={editChannels}
           activeChannel={activeChannel}
           interpMode={interpMode}
           onSelectChannel={selectMappingChannel}
           onToggleChannel={toggleEditChannel}
-          onCopyHash={copyRecipeHash}
-          onExport={outputMode === 'atlas' ? handleExportLibraryLUT : undefined}
-          canExport={normalizedCategoryCurves.length > 1}
        />
          {showPasteArea && (
           <CurvePasteArea

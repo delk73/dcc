@@ -1,34 +1,19 @@
 import React from 'react';
-import { Check, Circle, Copy, Download } from 'lucide-react';
+import { Check } from 'lucide-react';
 import type { Channel, ChannelMask } from '../types';
 import type { InterpMode } from '../lib/curveUtils';
 import type { CurveMappingRow } from '../lib/curveMappingRows';
 import { cn } from '../lib/utils';
 
-type RecipeIdentity = {
-  name: string;
-  hash?: string;
-  status?: 'clean' | 'dirty';
-};
-
 type CurveMappingLedgerProps = {
-  recipe: RecipeIdentity;
   rows: CurveMappingRow[];
   editChannels: ChannelMask;
   activeChannel: Channel;
   interpMode: InterpMode;
   onSelectChannel: (channel: Channel) => void;
   onToggleChannel: (channel: Channel) => void;
-  onCopyHash?: () => void;
-  onExport?: () => void;
-  canExport?: boolean;
   className?: string;
 };
-
-const SHORT_HASH_LENGTH = 8;
-
-const formatHash = (hash?: string) =>
-  hash ? `${hash.slice(0, SHORT_HASH_LENGTH)}${hash.length > SHORT_HASH_LENGTH ? '...' : ''}` : 'none';
 
 const formatSource = (row: CurveMappingRow) =>
   row.input ?? row.parameter ?? '-';
@@ -43,111 +28,97 @@ const formatInterpMode = (interpMode: InterpMode) => {
 };
 
 export function CurveMappingLedger({
-  recipe,
   rows,
   editChannels,
   activeChannel,
   interpMode,
   onSelectChannel,
   onToggleChannel,
-  onCopyHash,
-  onExport,
-  canExport = true,
   className,
 }: CurveMappingLedgerProps) {
+  const activeRow = rows.find(row => row.curveId === activeChannel);
+
   return (
-    <div className={cn('shrink-0 overflow-hidden border-t border-zinc-900/90 bg-[#09090b]', className)}>
-      <div className="flex min-h-7 items-center gap-2 overflow-hidden px-1.5 py-1 font-mono text-[10px] leading-none text-zinc-500">
-        <span className="shrink-0 font-bold uppercase tracking-wider text-zinc-400">Recipe:</span>
-        <span className="min-w-0 truncate text-zinc-200" title={recipe.name}>{recipe.name}</span>
-        {recipe.hash && (
-          <span className="shrink-0 text-zinc-500" title={recipe.hash}>
-            hash <span className="text-zinc-300">{formatHash(recipe.hash)}</span>
-          </span>
-        )}
-        {recipe.status && <span className="shrink-0 text-zinc-500">{recipe.status}</span>}
-        {recipe.hash && onCopyHash && (
-          <button
-            type="button"
-            onClick={onCopyHash}
-            className="ml-auto grid h-5 w-5 shrink-0 place-items-center rounded text-zinc-500 hover:bg-white/10 hover:text-zinc-100"
-            title="Copy recipe hash"
-            aria-label="Copy recipe hash"
-          >
-            <Copy className="h-3.5 w-3.5" />
-          </button>
-        )}
-        {onExport && (
-          <button
-            type="button"
-            onClick={onExport}
-            disabled={!canExport}
-            className={cn(
-              'grid h-5 w-5 shrink-0 place-items-center rounded text-zinc-500 hover:bg-white/10 hover:text-zinc-100',
-              !canExport && 'cursor-not-allowed opacity-40'
-            )}
-            title="Export"
-            aria-label="Export"
-          >
-            <Download className="h-3.5 w-3.5" />
-          </button>
-        )}
+    <div className={cn('shrink-0 overflow-hidden bg-[#09090b] font-mono text-[10px]', className)}>
+      <div className="flex min-h-7 items-center gap-1.5 overflow-hidden border-t border-zinc-900/90 px-1.5 py-1 leading-none text-zinc-500">
+        <span className="shrink-0 font-bold uppercase tracking-wider text-zinc-400">Visible:</span>
+        <div className="flex min-w-0 flex-wrap items-center gap-1">
+          {rows.map(row => {
+            const enabled = editChannels[row.curveId];
+
+            return (
+              <button
+                key={`visible-${row.curveId}-${row.parameter ?? row.roleLabel}`}
+                type="button"
+                onClick={() => onToggleChannel(row.curveId)}
+                className={cn(
+                  'flex h-5 max-w-32 items-center gap-1 rounded border px-1 text-left leading-none',
+                  enabled
+                    ? 'border-zinc-700 bg-zinc-900 text-zinc-200'
+                    : 'border-zinc-900 bg-transparent text-zinc-600 opacity-60 hover:border-zinc-800 hover:text-zinc-400'
+                )}
+                aria-pressed={enabled}
+                aria-label={`${enabled ? 'Hide' : 'Show'} ${row.curveLabel} ${row.roleLabel}`}
+                title={`${row.curveLabel} ${row.roleLabel}`}
+              >
+                {enabled && <Check className="h-3 w-3 shrink-0" />}
+                <span className="shrink-0 font-bold">{row.curveLabel}</span>
+                <span className="truncate">{row.roleLabel}</span>
+              </button>
+            );
+          })}
+        </div>
+        <span className="ml-auto shrink-0 truncate text-zinc-500" title={activeRow ? `${activeRow.curveLabel} / ${activeRow.roleLabel}` : undefined}>
+          Focus: <span className="text-zinc-300">{activeRow ? `${activeRow.curveLabel} ${activeRow.roleLabel}` : 'none'}</span>
+        </span>
       </div>
 
-      <div className="overflow-hidden rounded-sm border border-zinc-900/90 bg-black/20 font-mono text-[10px] leading-5">
+      <div className="mt-1 overflow-hidden rounded-sm border border-zinc-900/90 bg-black/20">
+        <div className="grid min-h-6 grid-cols-[minmax(5rem,0.85fr)_minmax(8rem,1.4fr)_minmax(3.75rem,0.55fr)_minmax(4.5rem,0.65fr)_minmax(3.5rem,0.5fr)_2rem] items-center gap-1 border-b border-zinc-900/90 px-1.5 font-bold uppercase tracking-wider text-zinc-500">
+          <span>Channel</span>
+          <span>Source Expression</span>
+          <span>Basis</span>
+          <span>State</span>
+          <span>Clamp</span>
+          <span />
+        </div>
         {rows.map(row => {
           const channel = row.curveId;
           const enabled = editChannels[channel];
           const active = activeChannel === channel;
           const title = [
-            row.curveLabel,
-            row.roleLabel,
-            row.parameter,
-            row.input,
+            `${row.curveLabel} / ${row.roleLabel}`,
+            formatSource(row),
             formatInterpMode(interpMode),
+            enabled ? 'active' : 'hidden',
             formatClamp(row),
           ].filter(Boolean).join(' / ');
 
           return (
-            <div
-              key={`${channel}-${row.parameter ?? row.roleLabel}`}
-              className={cn(
-                'grid min-h-6 grid-cols-[1rem_1rem_1.25rem_minmax(4rem,0.9fr)_minmax(5rem,1fr)_minmax(3.75rem,0.7fr)_minmax(4.5rem,0.75fr)_2rem] items-center gap-1 border-b border-zinc-900/70 px-1.5 last:border-b-0',
-                active ? 'bg-zinc-900/90 text-zinc-100' : 'text-zinc-400',
-                !enabled && 'text-zinc-600'
-              )}
-              title={title}
-            >
-              <button
-                type="button"
-                onClick={() => onSelectChannel(channel)}
-                className={cn('h-5 text-left text-zinc-600 hover:text-zinc-100', active && 'text-zinc-100')}
-                aria-label={`Select ${row.curveLabel} mapping`}
-              >
-                {active ? '>' : ''}
-              </button>
-              <button
-                type="button"
-                onClick={() => onToggleChannel(channel)}
-                className={cn('grid h-5 w-5 place-items-center rounded hover:bg-white/10', enabled ? 'text-zinc-200' : 'text-zinc-600')}
-                aria-label={`${enabled ? 'Disable' : 'Enable'} ${row.curveLabel} mapping`}
-                aria-pressed={enabled}
-              >
-                {enabled ? <Check className="h-3.5 w-3.5" /> : <Circle className="h-3 w-3" />}
-              </button>
+          <button
+            key={`${channel}-${row.parameter ?? row.roleLabel}`}
+            type="button"
+            onClick={() => onSelectChannel(channel)}
+            className={cn(
+              'grid min-h-6 w-full grid-cols-[minmax(5rem,0.85fr)_minmax(8rem,1.4fr)_minmax(3.75rem,0.55fr)_minmax(4.5rem,0.65fr)_minmax(3.5rem,0.5fr)_2rem] items-center gap-1 border-b border-zinc-900/70 px-1.5 text-left last:border-b-0',
+              active ? 'bg-zinc-900/90 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-950',
+              !enabled && 'text-zinc-600'
+            )}
+            title={title}
+            aria-label={`Edit ${row.curveLabel} ${row.roleLabel} binding`}
+          >
+            <span className="truncate">
+              <span className={cn('mr-1 inline-block w-2 text-zinc-600', active && 'text-zinc-100')}>{active ? '>' : ''}</span>
               <span className="font-bold text-zinc-300">{row.curveLabel}</span>
-              <span className="truncate" title={row.roleLabel}>{row.roleLabel}</span>
-              <span className="truncate text-zinc-500" title={formatSource(row)}>{formatSource(row)}</span>
-              <span className="truncate text-zinc-500">{formatInterpMode(interpMode)}</span>
-              <span className="truncate text-zinc-500">{formatClamp(row)}</span>
-              <button
-                type="button"
-                onClick={() => onSelectChannel(channel)}
-                className="h-5 rounded px-1 text-left text-zinc-500 hover:bg-white/10 hover:text-zinc-100"
-              >
-                edit
-              </button>
-            </div>
+              <span className="text-zinc-600"> / </span>
+              <span>{row.roleLabel}</span>
+            </span>
+            <span className="truncate text-zinc-500">{formatSource(row)}</span>
+            <span className="truncate text-zinc-500">{formatInterpMode(interpMode)}</span>
+            <span className="truncate text-zinc-500">{enabled ? 'active' : 'hidden'}</span>
+            <span className="truncate text-zinc-500">{formatClamp(row)}</span>
+            <span className="text-zinc-500">edit</span>
+          </button>
           );
         })}
       </div>
