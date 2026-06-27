@@ -2,6 +2,7 @@ import React, { useReducer, useState, useEffect, useMemo, useRef } from 'react';
 import { get, set } from 'idb-keyval';
 import { ColorCurve, Channel, LibraryCurve } from './types';
 import { CurveEditor } from './components/CurveEditor';
+import { CurveMappingLedger } from './components/CurveMappingLedger';
 import { CurvePasteArea } from './components/CurvePasteArea';
 import { AtlasViewer } from './components/AtlasViewer';
 import { OutputModeTabs } from './components/OutputModeTabs';
@@ -12,8 +13,11 @@ import { Download, RotateCcw, Settings2 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { InterpMode, computeTangents, evaluateCurve, blendSpaceCurves } from './lib/curveUtils';
 import { colorCurveToCurveSpaceIr } from './lib/curveSpaceIr';
+import { hashCurveFieldProjectionCanonical } from './lib/curveSpaceHash';
+import { stableHashHex } from './lib/stableHash';
 import { getCurveFieldChannelRoleSummary } from './lib/curveFieldChannelRoles';
 import { getAtlasMappingRows, getCurveFieldMappingRows } from './lib/curveMappingRows';
+import { CURVE_FIELD_BASIS_RECIPES } from './lib/curveFieldBasisIr';
 import { type CurveFieldPreviewSpec } from './lib/curveProjectionIr';
 import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
 import {
@@ -233,6 +237,7 @@ export default function App() {
 
     return {
       label: `C:${nearest.index + 1}`,
+      name: nearest.curve.name,
       title: `${nearest.curve.name} / ${nearest.curve.category} / Y ${nearest.curve.position.toFixed(3)}`
     };
   }, [normalizedCategoryCurves, spaceLever]);
@@ -303,6 +308,27 @@ export default function App() {
     },
   }), [curveFieldCurveSpace, curveFieldProjection, curveFieldPreviewSize]);
 
+  const atlasRecipeHash = useMemo(() => stableHashHex(normalizedCategoryCurves.map(anchor => ({
+    name: anchor.name,
+    category: anchor.category,
+    position: anchor.position,
+    curve: anchor.curve,
+    authored: anchor.authored,
+    source: anchor.source,
+  }))), [normalizedCategoryCurves]);
+
+  const curveFieldRecipeHash = useMemo(
+    () => hashCurveFieldProjectionCanonical(curveFieldCurveSpace, curveFieldProjection),
+    [curveFieldCurveSpace, curveFieldProjection]
+  );
+
+  const curveFieldRecipeName = useMemo(() => {
+    const selectedRecipe = CURVE_FIELD_BASIS_RECIPES.find(recipe => recipe.basis === curveFieldProjection.basis)
+      ?? CURVE_FIELD_BASIS_RECIPES.find(recipe => JSON.stringify(recipe.basis) === JSON.stringify(curveFieldProjection.basis));
+
+    return selectedRecipe?.label ?? curveFieldProjection.basis.kind;
+  }, [curveFieldProjection.basis]);
+
   const curveFieldChannelRoleSummary = useMemo(
     () => getCurveFieldChannelRoleSummary(curveFieldProjection.basis),
     [curveFieldProjection.basis]
@@ -323,6 +349,11 @@ export default function App() {
 
   const toggleEditChannel = (channel: Channel) => {
     dispatch({ type: 'toggle-edit-channel', channel });
+  };
+
+  const selectMappingChannel = (channel: Channel) => {
+    dispatch({ type: 'set-active-channel', channel });
+    dispatch({ type: 'clear-point-selection' });
   };
 
   const resetToMinimalBasicSpace = () => {
@@ -405,14 +436,21 @@ export default function App() {
     window.setTimeout(() => URL.revokeObjectURL(finalUrl), 0);
   };
 
+  const copyRecipeHash = () => {
+    const hash = outputMode === 'curve-field' ? curveFieldRecipeHash : atlasRecipeHash;
+    navigator.clipboard?.writeText(hash).catch(console.error);
+  };
+
   const renderCurveEditorPanel = (className = '', editorClassName = '') => {
     const pasteAreaHeight = layout.curveEditor.height >= 520 ? 156 : 132;
     const showPasteArea = outputMode === 'atlas';
-    const editorHeight = Math.max(240, layout.curveEditor.height - (showPasteArea ? pasteAreaHeight : 0) - 88);
     const editorCurve = outputMode === 'curve-field' ? curveFieldCurve : activeSpaceCurve;
     const curveIndexTitle = outputMode === 'curve-field'
       ? curveFieldChannelRoleSummary.replace(/  /g, ' / ')
       : activeCurveIndexInfo?.title;
+    const recipeIdentity = outputMode === 'curve-field'
+      ? { name: curveFieldRecipeName, hash: curveFieldRecipeHash }
+      : { name: activeCurveIndexInfo?.name ?? 'Atlas Recipe', hash: atlasRecipeHash };
 
     return (
      <div className={cn("bg-[#09090b] border border-zinc-800 rounded-xl p-1.5 gap-1.5 min-h-0 flex flex-col", className)}>
@@ -430,10 +468,8 @@ export default function App() {
           onChange={updateEditorCurve}
           editChannels={editChannels}
           activeChannel={activeChannel}
-          laneLegendRows={curveLaneLegendRows}
           selectedPoint={selectedPoint}
           onActiveChannelChange={(channel) => dispatch({ type: 'set-active-channel', channel })}
-          onEditChannelToggle={toggleEditChannel}
           onSelectedPointChange={(selection) => selection
             ? dispatch({ type: 'select-point', selection })
             : dispatch({ type: 'clear-point-selection' })}
@@ -444,8 +480,19 @@ export default function App() {
            curveIndexLabel={outputMode === 'curve-field' ? 'CF' : activeCurveIndexInfo?.label}
            curveIndexTitle={curveIndexTitle}
           width={Math.max(0, layout.curveEditor.width - 16)}
-          height={editorHeight}
           className={editorClassName}
+       />
+       <CurveMappingLedger
+          recipe={recipeIdentity}
+          rows={curveLaneLegendRows}
+          editChannels={editChannels}
+          activeChannel={activeChannel}
+          interpMode={interpMode}
+          onSelectChannel={selectMappingChannel}
+          onToggleChannel={toggleEditChannel}
+          onCopyHash={copyRecipeHash}
+          onExport={outputMode === 'atlas' ? handleExportLibraryLUT : undefined}
+          canExport={normalizedCategoryCurves.length > 1}
        />
          {showPasteArea && (
           <CurvePasteArea
@@ -563,7 +610,7 @@ export default function App() {
         }}
         className="overflow-hidden bg-black p-2"
       >
-        {renderCurveEditorPanel("h-full min-h-0 rounded-none border-zinc-800", "h-full min-h-0 flex-1 rounded-none")}
+        {renderCurveEditorPanel("h-full min-h-0 rounded-none border-zinc-800", "shrink-0 rounded-none")}
       </main>
 
       <section

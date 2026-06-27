@@ -1,5 +1,5 @@
 import type { CurveFieldBasisIr } from './curveFieldBasisIr';
-import type { CurveParameterBindingIr } from './curveParameterBindingIr';
+import type { CurveParameterBindingIr, CurveParameterRemapIr } from './curveParameterBindingIr';
 import type { CurveChannelId } from './curveSpaceIr';
 
 export type CurveMappingRow = {
@@ -8,6 +8,7 @@ export type CurveMappingRow = {
   roleLabel: string;
   parameter?: string;
   input?: CurveParameterBindingIr['input'];
+  clamp?: CurveParameterRemapIr['clamp'];
 };
 
 const CHANNEL_LABELS: Record<CurveChannelId, string> = {
@@ -79,6 +80,7 @@ export function getCurveFieldMappingRows(
         roleLabel,
         parameter: binding.parameter,
         input: binding.input,
+        clamp: binding.remap?.clamp,
       } : undefined;
     })
     .filter((row): row is CurveMappingRow => Boolean(row));

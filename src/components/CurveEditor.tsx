@@ -7,10 +7,8 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Maximize2, Minus, Plus } from 'lucide-react';
 import { ColorCurve, Channel, ChannelMask, CurvePoint } from '../types';
-import { CurveLaneLegend } from './CurveLaneLegend';
 import { cn } from '../lib/utils';
 import { computeTangents, evaluateCurve, InterpMode } from '../lib/curveUtils';
-import type { CurveMappingRow } from '../lib/curveMappingRows';
 import {
   DEFAULT_CURVE_VIEWPORT,
   buildTicks,
@@ -36,10 +34,8 @@ interface CurveEditorProps {
   onChange: (curve: ColorCurve) => void;
   editChannels: ChannelMask;
   activeChannel: Channel;
-  laneLegendRows: CurveMappingRow[];
   selectedPoint: SelectedPointRef | null;
   onActiveChannelChange: (channel: Channel) => void;
-  onEditChannelToggle: (channel: Channel) => void;
   onSelectedPointChange: (selection: SelectedPointRef | null) => void;
   interpMode: InterpMode;
   spaceLever: number;
@@ -57,7 +53,8 @@ const HEIGHT = 500;
 const PREVIEW_STRIP_HEIGHT = 24;
 const CONTROL_BAR_HEIGHT = 36;
 
-const SVG_MARGIN = { top: 20, right: 20, bottom: 20, left: 20 };
+const PLOT_TOOLBAR_CLEARANCE = 64;
+const SVG_MARGIN = { top: PLOT_TOOLBAR_CLEARANCE, right: 20, bottom: 20, left: 20 };
 const INNER_WIDTH = WIDTH - SVG_MARGIN.left - SVG_MARGIN.right;
 const INNER_HEIGHT = HEIGHT - SVG_MARGIN.top - SVG_MARGIN.bottom;
 const PREVIEW_INSET = {
@@ -166,10 +163,8 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   onChange,
   editChannels,
   activeChannel,
-  laneLegendRows,
   selectedPoint,
   onActiveChannelChange,
-  onEditChannelToggle,
   onSelectedPointChange,
   interpMode,
   spaceLever,
@@ -451,6 +446,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
 
   const detectEditableChannel = (time: number, value: number) => {
     if (editableChannels.length === 0) return null;
+    if (editChannels[activeChannel]) return activeChannel;
     if (editableChannels.length === 1) return editableChannels[0];
 
     return editableChannels.reduce((nearest, channel) => {
@@ -1255,14 +1251,6 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
           className="flex min-w-0 items-center gap-2"
           style={{ paddingLeft: SVG_MARGIN.left }}
         >
-          <CurveLaneLegend
-            rows={laneLegendRows}
-            editChannels={editChannels}
-            activeChannel={activeChannel}
-            onToggleChannel={onEditChannelToggle}
-            compact
-          />
-
           <div className="hidden truncate font-mono text-[10px] tracking-wider text-zinc-500 lg:block">
             DOMAIN: <span className="font-bold text-zinc-400">[ 0.000 ] - [ 1.000 ]</span>
           </div>
