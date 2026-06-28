@@ -68,6 +68,13 @@ const createMinimalBasicSpace = (): LibraryCurve[] => [{
 import type { MainView } from './state/editorState';
 
 const TWO_DIMENSIONAL_WORKSPACE_VIEW: MainView = '2d';
+type RecipeEditMode = 'inspect' | 'edit-expression' | 'bind-channels';
+
+const RECIPE_EDIT_MODES: Array<{ id: RecipeEditMode; label: string }> = [
+  { id: 'inspect', label: 'Inspect' },
+  { id: 'edit-expression', label: 'Edit Expression' },
+  { id: 'bind-channels', label: 'Bind Channels' },
+];
 
 const useWindowDimensions = () => {
   const [dims, setDims] = useState(() => ({
@@ -100,6 +107,7 @@ export default function App() {
     createInitialCurveProjectionState
   );
   const anchorsRef = useRef<LibraryCurve[]>([]);
+  const [recipeEditMode, setRecipeEditMode] = useState<RecipeEditMode>('inspect');
   
   const [atlasTexture, setAtlasTexture] = useState<ImageData | null>(null);
   const [atlasDomainTime, setAtlasDomainTime] = useState(0.5);
@@ -444,6 +452,18 @@ export default function App() {
   const formatShortHash = (hash: string) =>
     `${hash.slice(0, 8)}${hash.length > 8 ? '...' : ''}`;
 
+  const formatBindingSource = (row?: { input?: string; parameter?: string }) =>
+    row?.input ?? row?.parameter ?? '-';
+
+  const formatBindingClamp = (row?: { clamp?: string; parameter?: string }) =>
+    row?.clamp ?? (row?.parameter ? 'off' : '-');
+
+  const formatEditorBasis = (mode: InterpMode) => {
+    if (mode === 'constant') return 'stepped';
+    if (mode === 'cubic') return 'spline';
+    return mode;
+  };
+
   const renderCurveEditorPanel = (className = '', editorClassName = '') => {
     const pasteAreaHeight = layout.curveEditor.height >= 520 ? 156 : 132;
     const showPasteArea = outputMode === 'atlas';
@@ -460,18 +480,18 @@ export default function App() {
       ? `Output = compose(${expressionTerms.join(', ')})`
       : `Output = ${expressionTerms[0] ?? activeChannel.toUpperCase()}`;
     const showingLabel = activeMappingRow
-      ? `${activeMappingRow.roleLabel}${activeMappingRow.input ? ` / ${activeMappingRow.input}` : ''}`
+      ? `${activeMappingRow.curveLabel} / ${activeMappingRow.roleLabel}`
       : activeChannel.toUpperCase();
-    const basisLabel = outputMode === 'curve-field' ? curveFieldRecipeName : 'Atlas';
+    const showingSource = formatBindingSource(activeMappingRow);
+    const showingBasis = formatEditorBasis(interpMode);
+    const showingClamp = formatBindingClamp(activeMappingRow);
 
     return (
      <div className={cn("bg-[#09090b] border border-zinc-800 rounded-xl p-1.5 gap-1.5 min-h-0 flex flex-col", className)}>
        <div className="flex min-h-7 shrink-0 items-center gap-2 overflow-hidden border-b border-zinc-900/90 px-1.5 pb-1 font-mono text-[10px] leading-none text-zinc-500">
           <span className="shrink-0 font-bold uppercase tracking-widest text-zinc-400">Recipe:</span>
           <span className="min-w-0 truncate text-zinc-100" title={recipeIdentity.name}>{recipeIdentity.name}</span>
-          <span className="shrink-0" title={recipeIdentity.hash}>hash <span className="text-zinc-300">{formatShortHash(recipeIdentity.hash)}</span></span>
-          <span className="hidden min-w-0 truncate sm:inline" title={basisLabel}>Basis: <span className="text-zinc-300">{basisLabel}</span></span>
-          <span className="hidden shrink-0 sm:inline">Mode: <span className="text-zinc-300">inspect / edit / bind</span></span>
+          <span className="shrink-0" title={recipeIdentity.hash}>recipe hash <span className="text-zinc-300">{formatShortHash(recipeIdentity.hash)}</span></span>
           <button
             type="button"
             onClick={copyRecipeHash}
@@ -495,22 +515,42 @@ export default function App() {
           )}
        </div>
 
+       <div className="flex min-h-7 shrink-0 items-center gap-1.5 overflow-hidden px-1.5 font-mono text-[10px] leading-none text-zinc-500">
+          <span className="shrink-0 font-bold uppercase tracking-widest text-zinc-400">Mode:</span>
+          {RECIPE_EDIT_MODES.map(mode => {
+            const active = recipeEditMode === mode.id;
+
+            return (
+              <button
+                key={mode.id}
+                type="button"
+                onClick={() => setRecipeEditMode(mode.id)}
+                aria-pressed={active}
+                className={cn(
+                  'h-5 rounded border px-2 text-zinc-500 hover:border-zinc-700 hover:text-zinc-200',
+                  active && 'border-zinc-600 bg-zinc-900 text-zinc-100'
+                )}
+              >
+                {mode.label}
+              </button>
+            );
+          })}
+       </div>
+
        <section className="shrink-0 rounded-sm border border-zinc-900/90 bg-black/25 px-2 py-1 font-mono text-[10px]">
           <div className="flex items-center gap-2 leading-none">
             <h3 className="shrink-0 font-bold uppercase tracking-widest text-zinc-400">Curve Expression</h3>
-            {outputMode === 'curve-field' && (
-              <span className="min-w-0 truncate text-zinc-600" title={curveIndexTitle}>
-                {curveFieldChannelRoleSummary}
-              </span>
-            )}
           </div>
           <div className="mt-1 truncate text-zinc-200" title={expressionText}>{expressionText}</div>
        </section>
 
        <div className="flex min-h-4 shrink-0 items-center gap-2 px-1.5 leading-none">
           <h3 className="text-[10px] font-bold uppercase tracking-widest text-zinc-300">Curve Editor</h3>
-          <span className="min-w-0 truncate font-mono text-[10px] text-zinc-500" title={showingLabel}>
+          <span className="min-w-0 truncate font-mono text-[10px] text-zinc-500" title={`${showingLabel} / source ${showingSource} / ${showingBasis} / clamp ${showingClamp}`}>
             Showing: <span className="text-zinc-300">{showingLabel}</span>
+            <span className="ml-2">source <span className="text-zinc-300">{showingSource}</span></span>
+            <span className="ml-2 text-zinc-300">{showingBasis}</span>
+            <span className="ml-2">clamp <span className="text-zinc-300">{showingClamp}</span></span>
           </span>
        </div>
 

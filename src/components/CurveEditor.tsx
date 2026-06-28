@@ -1337,14 +1337,6 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
             </button>
           </div>
         )}
-        {!selectedTransformSummary && (
-          <div className="group inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-zinc-600">
-            <span className="rounded border border-zinc-900 bg-zinc-950 px-1 py-px text-zinc-500" title="Drag empty plot to box select · Double-click to add · Right-click point to remove · Wheel to zoom">?</span>
-            <span className="max-w-0 overflow-hidden whitespace-nowrap opacity-0 transition-all group-hover:max-w-[34rem] group-hover:opacity-100 group-focus-within:max-w-[34rem] group-focus-within:opacity-100">
-              Drag empty plot to box select · Double-click to add · Right-click point to remove · Wheel to zoom
-            </span>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -3,7 +3,6 @@ import { cn } from '../lib/utils';
 import type { CurveFieldProjectionIr } from '../lib/curveProjectionIr';
 import type { CurveSpaceIr } from '../lib/curveSpaceIr';
 import {
-  hashCurveFieldProjectionCanonical,
   hashCurveFieldProjectionIr,
   hashCurveSpaceIr,
 } from '../lib/curveSpaceHash';
@@ -20,10 +19,6 @@ export function CurveProjectionIrPanel({ curveSpace, projection, className }: Cu
   const curveSpaceHash = useMemo(() => hashCurveSpaceIr(curveSpace), [curveSpace]);
   const basisHash = useMemo(() => hashCurveFieldBasisIr(projection.basis), [projection.basis]);
   const projectionHash = useMemo(() => hashCurveFieldProjectionIr(projection), [projection]);
-  const canonicalHash = useMemo(
-    () => hashCurveFieldProjectionCanonical(curveSpace, projection),
-    [curveSpace, projection]
-  );
   const summary = useMemo(() => JSON.stringify({
     hierarchy: {
       curveSpace: {
@@ -36,7 +31,7 @@ export function CurveProjectionIrPanel({ curveSpace, projection, className }: Cu
           b: { points: curveSpace.channels.b.length },
           a: { points: curveSpace.channels.a.length },
         },
-        hash: curveSpaceHash,
+        curveSpaceHash,
       },
       basisRecipe: {
         basisKind: projection.basis.kind,
@@ -61,7 +56,7 @@ export function CurveProjectionIrPanel({ curveSpace, projection, className }: Cu
         kind: projection.kind,
         transform: projection.transform,
         selectedBasisKind: projection.basis.kind,
-        hash: projectionHash,
+        projectionHash,
       },
       previewSpec: {
         kind: 'curve-field-preview-spec',
@@ -75,17 +70,15 @@ export function CurveProjectionIrPanel({ curveSpace, projection, className }: Cu
         note: 'runtime evaluator consumes compiled LUTs, slots, transform, and numeric constants',
       },
     },
-    canonicalHash,
-  }, null, 2), [curveSpace, projection, curveSpaceHash, basisHash, projectionHash, canonicalHash]);
+  }, null, 2), [curveSpace, projection, curveSpaceHash, basisHash, projectionHash]);
 
   return (
     <div className={cn('rounded-sm border border-zinc-800 bg-zinc-950', className)}>
       <button type="button" onClick={() => setExpanded(value => !value)} className="flex min-h-5 w-full items-center gap-1.5 px-1.5 py-0.5 text-left leading-none">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">IR / Hash</span>
+        <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">IR Path</span>
         <span className="hidden font-mono text-[10px] text-zinc-600 sm:inline">CurveSpace -&gt; BasisRecipe -&gt; Projection</span>
         <span className="font-mono text-[10px] text-zinc-600">{projection.basis.kind}</span>
-        <span className="ml-auto font-mono text-[10px] text-zinc-500">{canonicalHash}</span>
-        <span className="font-mono text-[10px] text-zinc-600">{expanded ? '-' : '+'}</span>
+        <span className="ml-auto font-mono text-[10px] text-zinc-600">{expanded ? '-' : '+'}</span>
       </button>
       {expanded && (
         <pre className="overflow-x-auto whitespace-pre-wrap break-all px-1.5 pb-1.5 font-mono text-[10px] leading-relaxed text-zinc-400">
