@@ -47,6 +47,13 @@ import {
 
 const EXPORT_ATLAS_SIZE = { width: 256, height: 32 };
 const DOMAIN_TIME_DETENT_RADIUS = 0.015;
+const MIN_LAYOUT_WIDTH = 1080;
+const MIN_LAYOUT_HEIGHT = 900;
+const MIN_STACKED_ATLAS_HEIGHT = 640;
+const MIN_CURVE_EDITOR_HEIGHT = {
+  atlas: 1120,
+  'curve-field': 960,
+} as const;
 
 const initialCurve: ColorCurve = {
   r: migrateKeyframesToCurvePoints([{ time: 0, value: 0 }, { time: 1, value: 1 }]),
@@ -99,7 +106,9 @@ const useWindowDimensions = () => {
 
 export default function App() {
   const { width, height } = useWindowDimensions();
-  const layout = useWorkspaceLayout(width, height);
+  const layoutWidth = Math.max(width, MIN_LAYOUT_WIDTH);
+  const layoutHeight = Math.max(height, MIN_LAYOUT_HEIGHT);
+  const layout = useWorkspaceLayout(layoutWidth, layoutHeight);
   const [editorState, dispatch] = useReducer(editorReducer, undefined, createInitialEditorState);
   const [projectionState, dispatchProjection] = useReducer(
     curveProjectionReducer,
@@ -126,6 +135,10 @@ export default function App() {
   } = ui;
   const spaceLever = levers[TWO_DIMENSIONAL_WORKSPACE_VIEW];
   const { outputMode, curveFieldCurve, curveFieldProjection, curveFieldPreviewSize } = projectionState;
+  const workspaceMinHeight = Math.max(MIN_LAYOUT_HEIGHT - layout.headerRibbon.height, height - layout.headerRibbon.height);
+  const outputPanelMinHeight = Math.max(MIN_STACKED_ATLAS_HEIGHT, layout.isWidescreen ? workspaceMinHeight : 0);
+  const curvePanelMinHeight = MIN_CURVE_EDITOR_HEIGHT[outputMode];
+  const curvePanelWidth = layout.isWidescreen ? Math.floor(layoutWidth / 2) : layoutWidth;
 
   const setRawSpacePosition = (val: number) => {
       dispatch({ type: 'set-space-position', mainView: TWO_DIMENSIONAL_WORKSPACE_VIEW, position: val });
@@ -465,9 +478,9 @@ export default function App() {
   };
 
   const renderCurveEditorPanel = (className = '', editorClassName = '') => {
-    const pasteAreaHeight = layout.curveEditor.height >= 520 ? 156 : 132;
     const showPasteArea = outputMode === 'atlas';
     const editorCurve = outputMode === 'curve-field' ? curveFieldCurve : activeSpaceCurve;
+    const editorWidth = Math.max(0, curvePanelWidth - 32);
     const curveIndexTitle = outputMode === 'curve-field'
       ? curveFieldChannelRoleSummary.replace(/  /g, ' / ')
       : activeCurveIndexInfo?.title;
@@ -570,7 +583,7 @@ export default function App() {
           onDomainTimeChange={setAtlasDomainTimeWithDetent}
            curveIndexLabel={outputMode === 'curve-field' ? 'CF' : activeCurveIndexInfo?.label}
            curveIndexTitle={curveIndexTitle}
-          width={Math.max(0, layout.curveEditor.width - 16)}
+          width={editorWidth}
           className={editorClassName}
        />
        <CurveMappingLedger
@@ -580,12 +593,12 @@ export default function App() {
           interpMode={interpMode}
           onSelectChannel={selectMappingChannel}
           onToggleChannel={toggleEditChannel}
+          className="shrink-0"
        />
          {showPasteArea && (
           <CurvePasteArea
             onImport={importCurve}
             onPushSpace={pushSpace}
-            className={cn(layout.curveEditor.height < 520 && "hidden sm:block")}
           />
          )}
     </div>
@@ -638,17 +651,14 @@ export default function App() {
   );
 
   return (
-    <div className="fixed inset-0 overflow-hidden select-none bg-black text-zinc-100 font-sans selection:bg-indigo-500/30">
+    <div className="fixed inset-0 overflow-auto select-none bg-black text-zinc-100 font-sans selection:bg-indigo-500/30">
+      <div className="min-h-full bg-black" style={{ minWidth: MIN_LAYOUT_WIDTH }}>
       <header
         data-layout-region="headerRibbon"
         style={{
-          position: 'fixed',
-          left: layout.headerRibbon.x,
-          top: layout.headerRibbon.y,
-          width: layout.headerRibbon.width,
           height: layout.headerRibbon.height
         }}
-        className="z-50 flex items-center gap-3 border-b border-white/10 bg-[#09090b]/95 px-3"
+        className="sticky top-0 z-50 flex items-center gap-3 border-b border-white/10 bg-[#09090b]/95 px-3"
       >
         <h1 className="mr-1 shrink-0 text-sm font-bold tracking-tight text-white">Curve Composer</h1>
         <OutputModeTabs mode={outputMode} onChange={mode => dispatchProjection({ type: 'set-output-mode', mode })} />
@@ -686,34 +696,34 @@ export default function App() {
         </div>
       </header>
 
-      <main
-        data-layout-region="curveEditor"
+      <div
+        data-layout-region="workspace"
         style={{
-          position: 'fixed',
-          left: layout.curveEditor.x,
-          top: layout.curveEditor.y,
-          width: layout.curveEditor.width,
-          height: layout.curveEditor.height
+          minHeight: workspaceMinHeight,
+          gridTemplateColumns: layout.isWidescreen
+            ? 'minmax(540px, 1fr) minmax(540px, 1fr)'
+            : 'minmax(0, 1fr)',
         }}
-        className="overflow-hidden bg-black p-2"
+        className="grid bg-black"
       >
-        {renderCurveEditorPanel("h-full min-h-0 rounded-none border-zinc-800", "shrink-0 rounded-none")}
-      </main>
+        <main
+          data-layout-region="curveEditor"
+          style={{ minHeight: curvePanelMinHeight }}
+          className="min-w-0 overflow-visible bg-black p-2"
+        >
+          {renderCurveEditorPanel("min-h-full rounded-none border-zinc-800", "shrink-0 rounded-none")}
+        </main>
 
-      <section
-        data-layout-region="atlasViewport"
-        style={{
-          position: 'fixed',
-          left: layout.atlasViewport.x,
-          top: layout.atlasViewport.y,
-          width: layout.atlasViewport.width,
-          height: layout.atlasViewport.height
-        }}
-        className="overflow-hidden bg-black p-2"
-      >
-        {outputMode === 'atlas' ? renderAtlasPanel() : renderCurveFieldPanel()}
-      </section>
+        <section
+          data-layout-region="atlasViewport"
+          style={{ minHeight: outputPanelMinHeight }}
+          className="min-w-0 overflow-visible bg-black p-2"
+        >
+          {outputMode === 'atlas' ? renderAtlasPanel("min-h-full") : renderCurveFieldPanel("min-h-full")}
+        </section>
+      </div>
 
+      </div>
     </div>
   );
 }
