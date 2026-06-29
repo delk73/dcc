@@ -581,8 +581,9 @@ export default function App() {
           spaceLever={spaceLever}
           domainTime={atlasDomainTime}
           onDomainTimeChange={setAtlasDomainTimeWithDetent}
-           curveIndexLabel={outputMode === 'curve-field' ? 'CF' : activeCurveIndexInfo?.label}
-           curveIndexTitle={curveIndexTitle}
+          curveIndexLabel={outputMode === 'curve-field' ? 'CF' : activeCurveIndexInfo?.label}
+          curveIndexTitle={curveIndexTitle}
+          valueMode={outputMode === 'curve-field' ? 'signed-distance' : 'hdr'}
           width={editorWidth}
           className={editorClassName}
        />

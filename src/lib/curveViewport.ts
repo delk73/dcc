@@ -27,6 +27,13 @@ export const DEFAULT_CURVE_VIEWPORT: CurveViewport = {
   valueMax: 2
 };
 
+export const SIGNED_DISTANCE_CURVE_VIEWPORT: CurveViewport = {
+  timeMin: 0,
+  timeMax: 1,
+  valueMin: -1,
+  valueMax: 1
+};
+
 const TIME_DOMAIN = { min: 0, max: 1 };
 const VALUE_DOMAIN = { min: -1, max: 3 };
 const MIN_TIME_SPAN = 0.001;
@@ -107,7 +114,11 @@ export const valueToY = (value: number, viewport: CurveViewport, plot: PlotRect)
 
 export const yToValue = (y: number, viewport: CurveViewport, plot: PlotRect) => {
   const t = (plot.bottom - y) / plot.height;
-  return clamp(viewport.valueMin + t * (viewport.valueMax - viewport.valueMin), 0, 2);
+  return clamp(
+    viewport.valueMin + t * (viewport.valueMax - viewport.valueMin),
+    viewport.valueMin,
+    viewport.valueMax
+  );
 };
 
 export const zoomViewport = (

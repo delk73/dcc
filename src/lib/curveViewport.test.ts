@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   DEFAULT_CURVE_VIEWPORT,
+  SIGNED_DISTANCE_CURVE_VIEWPORT,
   buildTicks,
   clampViewport,
   panViewport,
@@ -31,6 +32,9 @@ nearlyEqual(xToTime(x, DEFAULT_CURVE_VIEWPORT, plot), 0.42);
 
 const y = valueToY(1.35, DEFAULT_CURVE_VIEWPORT, plot);
 nearlyEqual(yToValue(y, DEFAULT_CURVE_VIEWPORT, plot), 1.35);
+
+const signedY = valueToY(-0.4, SIGNED_DISTANCE_CURVE_VIEWPORT, plot);
+nearlyEqual(yToValue(signedY, SIGNED_DISTANCE_CURVE_VIEWPORT, plot), -0.4);
 
 const anchor = { time: 0.25, value: 0.75 };
 const zoomed = zoomViewport(DEFAULT_CURVE_VIEWPORT, anchor, 0.5, 0.5);

@@ -11,6 +11,7 @@ import { cn } from '../lib/utils';
 import { computeTangents, evaluateCurve, InterpMode } from '../lib/curveUtils';
 import {
   DEFAULT_CURVE_VIEWPORT,
+  SIGNED_DISTANCE_CURVE_VIEWPORT,
   buildTicks,
   timeToX,
   valueToY,
@@ -43,6 +44,7 @@ interface CurveEditorProps {
   onDomainTimeChange?: (time: number, options?: { commit?: boolean }) => void;
   curveIndexLabel?: string;
   curveIndexTitle?: string;
+  valueMode?: 'hdr' | 'signed-distance';
   width?: number;
   height?: number;
   className?: string;
@@ -115,7 +117,8 @@ type DomainGuideDrag = {
 const buildDisplayCurvePath = (
   data: CurvePoint[],
   viewport: CurveViewport,
-  interpMode: InterpMode
+  interpMode: InterpMode,
+  transformValue: (value: number) => number = value => value
 ) => {
   if (data.length === 0) return '';
 
@@ -149,7 +152,7 @@ const buildDisplayCurvePath = (
   [...sampleTimes.values()].sort((a, b) => a - b).forEach((time, sampleIndex) => {
     const value = Math.max(
       viewport.valueMin,
-      Math.min(viewport.valueMax, evaluateCurve(sortedData, tangents, time, interpMode))
+      Math.min(viewport.valueMax, transformValue(evaluateCurve(sortedData, tangents, time, interpMode)))
     );
     const x = timeToX(time, viewport, PLOT_RECT);
     const y = valueToY(value, viewport, PLOT_RECT);
@@ -173,6 +176,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   onDomainTimeChange,
   curveIndexLabel,
   curveIndexTitle,
+  valueMode = 'hdr',
   width,
   height,
   className
@@ -209,6 +213,23 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     (boundedHeight ?? HEIGHT) - PREVIEW_STRIP_HEIGHT - CONTROL_BAR_HEIGHT - 48
   );
   const lockedPlotWidth = boundedWidth ?? Math.ceil(availablePlotHeight * SVG_ASPECT_RATIO);
+  const baseViewport = valueMode === 'signed-distance'
+    ? SIGNED_DISTANCE_CURVE_VIEWPORT
+    : DEFAULT_CURVE_VIEWPORT;
+  const storedToDisplayValue = (value: number) =>
+    valueMode === 'signed-distance' ? value - 1 : value;
+  const displayToStoredValue = (value: number) =>
+    valueMode === 'signed-distance' ? value + 1 : value;
+  const storedToPreviewUnitValue = (value: number) => {
+    const displayValue = storedToDisplayValue(value);
+    return valueMode === 'signed-distance'
+      ? Math.max(0, Math.min(1, (displayValue + 1) * 0.5))
+      : Math.max(0, Math.min(1, displayValue));
+  };
+  const valueReferenceLine = valueMode === 'signed-distance' ? 0 : 1;
+  const valueDomainLabel = valueMode === 'signed-distance'
+    ? '[ -1.000 ] - [ 1.000 ]'
+    : '[ 0.000 ] - [ 2.000 ]';
 
   const computedViewport = useMemo<CurveViewport>(() => {
     const anchorTime = Math.max(0, Math.min(1, zoomAnchor.time));
@@ -227,11 +248,11 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     }
 
     return {
-      ...DEFAULT_CURVE_VIEWPORT,
+      ...baseViewport,
       timeMin: Math.max(0, minX),
       timeMax: Math.min(1, maxX),
     };
-  }, [zoomAnchor, zoomX]);
+  }, [baseViewport, zoomAnchor, zoomX]);
 
   const viewMinX = computedViewport.timeMin;
   const viewMaxX = computedViewport.timeMax;
@@ -287,26 +308,20 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     for (let i = 0; i <= steps; i++) {
       const localT = i / steps;
       const targetTime = viewMinX + (localT * visibleDomainWidth);
-      const r = Math.round(
-        Math.max(0, Math.min(1, evaluateCurve(sortedCurve.r, tangents.r, targetTime, interpMode))) * 255
-      );
-      const g = Math.round(
-        Math.max(0, Math.min(1, evaluateCurve(sortedCurve.g, tangents.g, targetTime, interpMode))) * 255
-      );
-      const b = Math.round(
-        Math.max(0, Math.min(1, evaluateCurve(sortedCurve.b, tangents.b, targetTime, interpMode))) * 255
-      );
-      const a = Math.max(0, Math.min(1, evaluateCurve(sortedCurve.a, tangents.a, targetTime, interpMode)));
+      const r = Math.round(storedToPreviewUnitValue(evaluateCurve(sortedCurve.r, tangents.r, targetTime, interpMode)) * 255);
+      const g = Math.round(storedToPreviewUnitValue(evaluateCurve(sortedCurve.g, tangents.g, targetTime, interpMode)) * 255);
+      const b = Math.round(storedToPreviewUnitValue(evaluateCurve(sortedCurve.b, tangents.b, targetTime, interpMode)) * 255);
+      const a = storedToPreviewUnitValue(evaluateCurve(sortedCurve.a, tangents.a, targetTime, interpMode));
 
       stops.push(`rgba(${r},${g},${b},${a}) ${localT * 100}%`);
     }
 
     return `linear-gradient(to right, ${stops.join(', ')})`;
-  }, [curve, interpMode, viewMaxX, viewMinX]);
+  }, [curve, interpMode, storedToPreviewUnitValue, viewMaxX, viewMinX]);
 
   const curveToScreen = (time: number, value: number, sourceViewport = computedViewport) => ({
     x: timeToX(time, sourceViewport, PLOT_RECT),
-    y: valueToY(value, sourceViewport, PLOT_RECT)
+    y: valueToY(storedToDisplayValue(value), sourceViewport, PLOT_RECT)
   });
 
   const screenToCurve = (point: { x: number; y: number }, sourceViewport = computedViewport) => ({
@@ -315,7 +330,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
   });
 
   const clampDisplayValue = (value: number, sourceViewport = computedViewport) =>
-    Math.max(sourceViewport.valueMin, Math.min(sourceViewport.valueMax, value));
+    Math.max(sourceViewport.valueMin, Math.min(sourceViewport.valueMax, storedToDisplayValue(value)));
 
   const scheduleCursorValue = (value: { time: number; value: number }) => {
     pendingCursorValueRef.current = value;
@@ -398,7 +413,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
       startClientX: e.clientX,
       startClientY: e.clientY,
       hasMoved: false,
-      startCurvePoint: { time: point.time, value: point.value },
+      startCurvePoint: { time: point.time, value: storedToDisplayValue(point.value) },
       multiDrag: pointIsMultiSelected && multiSelectedPoints.length > 1,
       startCurve: curve,
     };
@@ -453,7 +468,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     return editableChannels.reduce((nearest, channel) => {
       const sortedData = [...activeCurveData[channel]].sort((a, b) => a.time - b.time);
       const tangents = computeTangents(sortedData);
-      const channelValue = evaluateCurve(sortedData, tangents, time, interpMode);
+      const channelValue = storedToDisplayValue(evaluateCurve(sortedData, tangents, time, interpMode));
       const distance = Math.abs(channelValue - value);
 
       return !nearest || distance < nearest.distance
@@ -578,7 +593,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
 
     const nextCurvePoint = screenToCurve(point);
     const newTime = nextCurvePoint.time;
-    const newValue = nextCurvePoint.value;
+    const newValue = displayToStoredValue(nextCurvePoint.value);
 
     if (dragGesture.multiDrag) {
       const deltaTime = (newTime - dragGesture.startCurvePoint.time) * 0.5;
@@ -725,8 +740,9 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
 
     const nextCurvePoint = screenToCurve(point);
     let newTime = nextCurvePoint.time;
-    const newValue = nextCurvePoint.value;
-    const targetChannel = detectEditableChannel(newTime, newValue);
+    const newDisplayValue = nextCurvePoint.value;
+    const newValue = displayToStoredValue(newDisplayValue);
+    const targetChannel = detectEditableChannel(newTime, newDisplayValue);
     if (!targetChannel) return;
 
     onActiveChannelChange(targetChannel);
@@ -856,20 +872,20 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
 
   const curvePaths: Record<Channel, string> = {
     r: useMemo(
-      () => buildDisplayCurvePath(activeCurveData.r, computedViewport, interpMode),
-      [activeCurveData.r, computedViewport, interpMode]
+      () => buildDisplayCurvePath(activeCurveData.r, computedViewport, interpMode, storedToDisplayValue),
+      [activeCurveData.r, computedViewport, interpMode, storedToDisplayValue]
     ),
     g: useMemo(
-      () => buildDisplayCurvePath(activeCurveData.g, computedViewport, interpMode),
-      [activeCurveData.g, computedViewport, interpMode]
+      () => buildDisplayCurvePath(activeCurveData.g, computedViewport, interpMode, storedToDisplayValue),
+      [activeCurveData.g, computedViewport, interpMode, storedToDisplayValue]
     ),
     b: useMemo(
-      () => buildDisplayCurvePath(activeCurveData.b, computedViewport, interpMode),
-      [activeCurveData.b, computedViewport, interpMode]
+      () => buildDisplayCurvePath(activeCurveData.b, computedViewport, interpMode, storedToDisplayValue),
+      [activeCurveData.b, computedViewport, interpMode, storedToDisplayValue]
     ),
     a: useMemo(
-      () => buildDisplayCurvePath(activeCurveData.a, computedViewport, interpMode),
-      [activeCurveData.a, computedViewport, interpMode]
+      () => buildDisplayCurvePath(activeCurveData.a, computedViewport, interpMode, storedToDisplayValue),
+      [activeCurveData.a, computedViewport, interpMode, storedToDisplayValue]
     ),
   };
 
@@ -878,7 +894,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
 
     for (const tick of buildTicks(computedViewport.valueMin, computedViewport.valueMax, 4)) {
       const y = valueToY(tick.value, computedViewport, PLOT_RECT);
-      const isOne = Math.abs(tick.value - 1) < POINT_EPSILON;
+      const isReference = Math.abs(tick.value - valueReferenceLine) < POINT_EPSILON;
 
       lines.push(
         <line
@@ -887,15 +903,15 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
           y1={y}
           x2={PLOT_RECT.right}
           y2={y}
-          stroke={isOne ? '#52525b' : tick.major ? '#3f3f46' : '#27272a'}
-          strokeWidth={isOne ? 2 : 1}
+          stroke={isReference ? '#52525b' : tick.major ? '#3f3f46' : '#27272a'}
+          strokeWidth={isReference ? 2 : 1}
         />
       );
 
-      if (tick.major || isOne) {
+      if (tick.major || isReference) {
         lines.push(
           <text key={`ht-${tick.value}`} x={PLOT_RECT.left - 5} y={y + 4} fill="#a1a1aa" fontSize="12" textAnchor="end">
-            {isOne ? '1.0' : tick.label}
+            {isReference ? valueReferenceLine.toFixed(1) : tick.label}
           </text>
         );
       }
@@ -1254,6 +1270,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
         >
           <div className="hidden truncate font-mono text-[10px] tracking-wider text-zinc-500 lg:block">
             DOMAIN: <span className="font-bold text-zinc-400">[ 0.000 ] - [ 1.000 ]</span>
+            <span className="ml-2">RANGE: <span className="font-bold text-zinc-400">{valueDomainLabel}</span></span>
           </div>
         </div>
 
@@ -1282,7 +1299,7 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
             T <span className="inline-block w-10 text-zinc-300">{(focusedCurvePoint?.time ?? cursorValue?.time ?? 0).toFixed(3)}</span>
           </span>
           <span className="shrink-0 text-right text-zinc-400">
-            V <span className="inline-block w-10 text-zinc-300">{(focusedCurvePoint?.value ?? cursorValue?.value ?? 0).toFixed(3)}</span>
+            V <span className="inline-block w-10 text-zinc-300">{(focusedCurvePoint ? storedToDisplayValue(focusedCurvePoint.value) : cursorValue?.value ?? 0).toFixed(3)}</span>
           </span>
         </div>
       </div>
