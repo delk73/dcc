@@ -1,5 +1,6 @@
 {
-  "name": "react-example",
+  "name": "dcc",
+  "description": "Browser-based curve, space, and atlas composer for authored color curves.",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -12,12 +13,9 @@
     "test": "tsx src/lib/curvePointPolicy.test.ts && tsx src/lib/curveViewport.test.ts && tsx src/lib/curvePaste.test.ts && tsx src/test/layoutCompliance.test.ts && tsx src/lib/curveFieldProjection.test.ts"
   },
   "dependencies": {
-    "@google/genai": "^1.29.0",
     "@tailwindcss/vite": "^4.1.14",
     "@vitejs/plugin-react": "^5.0.4",
     "clsx": "^2.1.1",
-    "dotenv": "^17.2.3",
-    "express": "^4.21.2",
     "idb-keyval": "^6.2.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
@@ -27,8 +25,9 @@
     "vite": "^6.2.3"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.21",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",

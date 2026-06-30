@@ -1,20 +1,19 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# DCC Curve Composer
 
-# Run and deploy your AI Studio app
+DCC is a browser-based curve, space, and atlas composer for authored color curves. It lets you edit channel curves, compose them across a normalized curve space, preview atlas output, and export PNG atlas data with provenance metadata.
 
-This contains everything you need to run your app locally.
+The app is a local Vite/React workspace. It does not require a backend service or Gemini API key to run.
 
-View your app in AI Studio: https://ai.studio/apps/516d09e7-56fc-4ee3-90b0-cf0e9a82ca1f
+## Local Setup
 
-## Run Locally
+```bash
+npm ci
+npm run dev
+npm run lint
+npm test
+npm run build
+```
 
-**Prerequisites:**  Node.js
+## Curve Model Contract
 
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+The current curve model invariants are documented in [src/domain/curveModelContract.md](src/domain/curveModelContract.md).

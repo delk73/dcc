@@ -1,5 +1,4 @@
 import React, { useReducer, useState, useEffect, useMemo, useRef } from 'react';
-import { get, set } from 'idb-keyval';
 import { ColorCurve, Channel, LibraryCurve } from './types';
 import { CurveEditor } from './components/CurveEditor';
 import { CurveMappingLedger } from './components/CurveMappingLedger';
@@ -11,7 +10,7 @@ import { CurveFieldProjectionViewer } from './components/CurveFieldProjectionVie
 import { CurveProjectionIrPanel } from './components/CurveProjectionIrPanel';
 import { Copy, Download, RotateCcw, Settings2 } from 'lucide-react';
 import { cn } from './lib/utils';
-import { InterpMode, computeTangents, evaluateCurve, blendSpaceCurves } from './lib/curveUtils';
+import { InterpMode, blendSpaceCurves } from './lib/curveUtils';
 import { colorCurveToCurveSpaceIr } from './lib/curveSpaceIr';
 import { hashCurveFieldProjectionCanonical } from './lib/curveSpaceHash';
 import { stableHashHex } from './lib/stableHash';
@@ -23,29 +22,29 @@ import { useWorkspaceLayout } from './hooks/useWorkspaceLayout';
 import {
   POSITION_EPSILON,
   clampSpacePosition,
-  cloneCurve,
   normalizeAnchors,
   snapToAnchorIfClose,
   sortAnchors
 } from './lib/spaceUtils';
-import { insertTextChunk } from './lib/pngUtils';
 import { createId } from './lib/idUtils';
-import {
-  migrateKeyframesToCurvePoints,
-  normalizeLibraryCurves,
-} from './lib/curvePointPolicy';
 import {
   createInitialEditorState,
   editorReducer,
-  normalizePersistedUxState,
-  serializeUxState,
+  type MainView,
 } from './state/editorState';
 import {
   createInitialCurveProjectionState,
   curveProjectionReducer,
 } from './state/curveProjectionState';
+import { createMinimalBasicSpace, initialCurve } from './domain/defaults';
+import {
+  loadPersistedLibrary,
+  loadPersistedUxState,
+  saveCurveLibrary,
+  saveUxState,
+} from './state/persistence';
+import { createAtlasPngUrl } from './export/atlasExport';
 
-const EXPORT_ATLAS_SIZE = { width: 256, height: 32 };
 const DOMAIN_TIME_DETENT_RADIUS = 0.015;
 const MIN_LAYOUT_WIDTH = 1080;
 const MIN_LAYOUT_HEIGHT = 900;
@@ -54,25 +53,6 @@ const MIN_CURVE_EDITOR_HEIGHT = {
   atlas: 1120,
   'curve-field': 960,
 } as const;
-
-const initialCurve: ColorCurve = {
-  r: migrateKeyframesToCurvePoints([{ time: 0, value: 0 }, { time: 1, value: 1 }]),
-  g: migrateKeyframesToCurvePoints([{ time: 0, value: 0 }, { time: 1, value: 1 }]),
-  b: migrateKeyframesToCurvePoints([{ time: 0, value: 0 }, { time: 1, value: 1 }]),
-  a: migrateKeyframesToCurvePoints([{ time: 0, value: 1 }, { time: 1, value: 1 }])
-};
-
-const createMinimalBasicSpace = (): LibraryCurve[] => [{
-  id: createId('anchor'),
-  name: 'Default Sweep',
-  category: 'Basic',
-  position: 0,
-  curve: cloneCurve(initialCurve),
-  authored: true,
-  source: 'manual'
-}];
-
-import type { MainView } from './state/editorState';
 
 const TWO_DIMENSIONAL_WORKSPACE_VIEW: MainView = '2d';
 type RecipeEditMode = 'inspect' | 'edit-expression' | 'bind-channels';
@@ -150,30 +130,14 @@ export default function App() {
     }
   }, [mainView]);
 
-  // Load from local storage / indexedDB
   useEffect(() => {
     const loadState = async () => {
       try {
-        let savedLibrary = await get('curve-library');
-        
-        // Migrate from localStorage if idb is empty
-        if (!savedLibrary || savedLibrary.length === 0) {
-            const lsData = localStorage.getItem('curve-library');
-            if (lsData) {
-                try {
-                    savedLibrary = JSON.parse(lsData);
-                    await set('curve-library', savedLibrary); // Save it to indexedDB for next time
-                } catch (e) {
-                    console.error("Migration parse error", e);
-                }
-            }
-        }
+        const savedLibrary = await loadPersistedLibrary();
 
-        if (savedLibrary && savedLibrary.length > 0) {
-          dispatch({ type: 'load-library', library: normalizeLibraryCurves(savedLibrary) });
-          
-          // Load UX state
-          dispatch({ type: 'hydrate-ui', uxState: normalizePersistedUxState(await get('curve-ux-state')) });
+        if (savedLibrary.length > 0) {
+          dispatch({ type: 'load-library', library: savedLibrary });
+          dispatch({ type: 'hydrate-ui', uxState: await loadPersistedUxState() });
         } else {
           dispatch({ type: 'load-library', library: createMinimalBasicSpace() });
         }
@@ -186,17 +150,15 @@ export default function App() {
     loadState();
   }, []);
 
-  // Save to indexedDB whenever library changes
   useEffect(() => {
     if (hasHydrated && library.length > 0) {
-      set('curve-library', library).catch(console.error);
+      saveCurveLibrary(library).catch(console.error);
     }
   }, [hasHydrated, library]);
 
-  // Save UX state
   useEffect(() => {
     if (!hasHydrated) return;
-    set('curve-ux-state', serializeUxState(ui)).catch(console.error);
+    saveUxState(ui).catch(console.error);
   }, [hasHydrated, ui]);
 
   const activeCategoryCurves = useMemo(() => {
@@ -384,71 +346,12 @@ export default function App() {
 
   const handleExportLibraryLUT = () => {
     if (normalizedCategoryCurves.length === 0) return;
-    
-    const width = EXPORT_ATLAS_SIZE.width;
-    const height = EXPORT_ATLAS_SIZE.height;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return;
-    
-    if (atlasTexture) {
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = atlasTexture.width;
-        tempCanvas.height = atlasTexture.height;
-        tempCanvas.getContext('2d')?.putImageData(atlasTexture, 0, 0);
-        ctx.drawImage(tempCanvas, 0, 0, width, height);
-    } else {
-        const imageData = ctx.createImageData(width, height);
-        const data = imageData.data;
-
-        for (let y = 0; y < height; y++) {
-            const tSpace = 1.0 - (y / (height - 1));
-            const curveObj = blendSpaceCurves(spaceCurves, tSpace, interpMode);
-            
-            const sortedCurve = {
-                r: [...curveObj.r].sort((a, b) => a.time - b.time),
-                g: [...curveObj.g].sort((a, b) => a.time - b.time),
-                b: [...curveObj.b].sort((a, b) => a.time - b.time),
-                a: [...curveObj.a].sort((a, b) => a.time - b.time),
-            };
-            const tangents = {
-                r: computeTangents(sortedCurve.r),
-                g: computeTangents(sortedCurve.g),
-                b: computeTangents(sortedCurve.b),
-                a: computeTangents(sortedCurve.a)
-            };
-
-            for (let x = 0; x < width; x++) {
-                const t = x / (width - 1);
-                const r = evaluateCurve(sortedCurve.r, tangents.r, t, interpMode);
-                const g = evaluateCurve(sortedCurve.g, tangents.g, t, interpMode);
-                const b = evaluateCurve(sortedCurve.b, tangents.b, t, interpMode);
-                const a = evaluateCurve(sortedCurve.a, tangents.a, t, interpMode);
-                
-                const idx = (y * width + x) * 4;
-                data[idx] = Math.min(255, Math.max(0, r * 255));
-                data[idx + 1] = Math.min(255, Math.max(0, g * 255));
-                data[idx + 2] = Math.min(255, Math.max(0, b * 255));
-                data[idx + 3] = Math.min(255, Math.max(0, a * 255));
-            }
-        }
-        
-        ctx.putImageData(imageData, 0, 0);
-    }
-    const url = canvas.toDataURL('image/png');
-    
-    // Embed provenance directly into the PNG tEXt chunk
-    const metadataJSON = JSON.stringify(normalizedCategoryCurves.map(c => ({
-      name: c.name,
-      category: c.category,
-      position: c.position,
-      curve: c.curve
-    })));
-
-    const finalUrl = insertTextChunk(url, 'Provenance', metadataJSON);
+    const finalUrl = createAtlasPngUrl({
+      curves: normalizedCategoryCurves,
+      interpMode,
+      atlasTexture,
+    });
+    if (!finalUrl) return;
 
     const a = document.createElement('a');
     a.href = finalUrl;

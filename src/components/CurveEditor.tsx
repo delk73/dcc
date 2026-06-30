@@ -443,9 +443,10 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
     onDomainTimeChange?.(nextTime, { commit });
   };
 
-  const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
+  const handleWheelZoom = (event: WheelEvent) => {
     if (event.deltaY === 0) return;
     event.preventDefault();
+    event.stopPropagation();
 
     const svgPoint = getSvgPoint(event.clientX, event.clientY);
     if (svgPoint) {
@@ -459,6 +460,14 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
       Math.max(MIN_ZOOM_X, Math.min(MAX_ZOOM_X, currentZoom * Math.exp(-event.deltaY * WHEEL_ZOOM_INTENSITY)))
     );
   };
+
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    svg.addEventListener('wheel', handleWheelZoom, { passive: false });
+    return () => svg.removeEventListener('wheel', handleWheelZoom);
+  });
 
   const detectEditableChannel = (time: number, value: number) => {
     if (editableChannels.length === 0) return null;
@@ -1202,7 +1211,6 @@ export const CurveEditor: React.FC<CurveEditorProps> = ({
               onPointerLeave={handlePointerUp}
               onPointerCancel={handlePointerUp}
               onDoubleClick={handleSvgDoubleClick}
-              onWheel={handleWheel}
             >
               <defs>
                 <clipPath id={plotClipId}>
